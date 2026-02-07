@@ -3,5 +3,3 @@ plotly
 streamlit
 gcsfs
 fsspec
-google-auth
-google-api-python-client
