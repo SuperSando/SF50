@@ -3,10 +3,12 @@ import pandas as pd
 import clean_flight_data as cleaner
 import graph_flight_interactive as visualizer
 from datetime import datetime
-import gcsfs
-from google.oauth2 import service_account
+from pydrive2.auth import GoogleAuth
+from pydrive2.drive import GoogleDrive
+from oauth2client.service_account import ServiceAccountCredentials
+import io
 
-# --- 1. AUTHENTICATION & CLOUD CONNECTION ---
+# --- 1. AUTHENTICATION & DRIVE CONNECTION ---
 def check_password():
     if "password_correct" not in st.session_state:
         st.title("🔒 SF50 Data Access")
@@ -18,57 +20,62 @@ def check_password():
                     st.rerun()
                 else:
                     st.error("😕 Password incorrect")
-            except Exception:
-                st.error("Secrets not configured correctly. Check [password] block.")
+            except:
+                st.error("Secrets not configured correctly.")
         return False
     return True
 
-# Initialize Connection
-try:
-    creds_dict = dict(st.secrets["gdrive_service_account"])
-    # We explicitly define the Drive scope here
-    SCOPES = ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/cloud-platform']
-    credentials = service_account.Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+# Initialize Google Drive Connection (Bypasses Google Cloud Billing)
+@st.cache_resource
+def get_drive_connection():
+    try:
+        scope = ['https://www.googleapis.com/auth/drive']
+        creds_dict = dict(st.secrets["gdrive_service_account"])
+        # Standard Service Account Auth for Drive
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+        gauth = GoogleAuth()
+        gauth.credentials = creds
+        return GoogleDrive(gauth)
+    except Exception as e:
+        st.error(f"Drive Connection Error: {e}")
+        return None
+
+drive = get_drive_connection()
+
+# Helper: Find or Create Folder in Drive
+def get_folder_id(folder_name, parent_id=None):
+    query = f"title='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+    if parent_id:
+        query += f" and '{parent_id}' in parents"
     
-    # Initialize the filesystem
-    fs = gcsfs.GCSFileSystem(project=creds_dict.get('project_id'), token=credentials)
-    
-    # IMPORTANT: ROOT_FOLDER must exist and be shared with the Service Account email
-    ROOT_FOLDER = "sf50-fleet-data" 
-    
-    # Test if we can see the folder
-    if not fs.exists(ROOT_FOLDER):
-        # If the robot is an Editor, it can create the folder if it's missing
-        fs.mkdir(ROOT_FOLDER)
-        
-except Exception as e:
-    st.error(f"Cloud Connection Error: {e}")
-    st.info("Verification: Is the folder 'sf50-fleet-data' shared with the Service Account email as EDITOR?")
-    st.stop()
+    file_list = drive.ListFile({'q': query}).GetList()
+    if file_list:
+        return file_list[0]['id']
+    else:
+        # Create it if it doesn't exist
+        meta = {'title': folder_name, 'mimeType': 'application/vnd.google-apps.folder'}
+        if parent_id:
+            meta['parents'] = [{'id': parent_id}]
+        folder = drive.CreateFile(meta)
+        folder.Upload()
+        return folder['id']
 
 # --- 2. MAIN APP ---
-if check_password():
+if check_password() and drive:
     st.set_page_config(layout="wide", page_title="Vision Jet Analytics", page_icon="✈️")
 
-    st.markdown("""
-        <style>
-        [data-testid="stMetricValue"] { font-size: 1.8rem; color: #d33612; }
-        .stTabs [data-baseweb="tab-list"] { gap: 24px; }
-        .stTabs [data-baseweb="tab"] { height: 50px; font-weight: bold; }
-        </style>
-        """, unsafe_allow_html=True)
+    # Ensure Root Folder Exists
+    ROOT_ID = get_folder_id("sf50-fleet-data")
 
     with st.sidebar:
         st.title("🚀 SF50 Fleet Control")
-        st.subheader("📁 Aircraft Profile")
         
-        try:
-            # Listing aircraft folders
-            existing_profiles = [f.split('/')[-1] for f in fs.ls(ROOT_FOLDER) if fs.isdir(f)]
-        except:
-            existing_profiles = []
-            
-        selected_profile = st.selectbox("Select Aircraft", ["New Profile..."] + existing_profiles)
+        # Aircraft Profile Logic
+        st.subheader("📁 Aircraft Profile")
+        profiles = drive.ListFile({'q': f"'{ROOT_ID}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"}).GetList()
+        profile_names = [p['title'] for p in profiles]
+        
+        selected_profile = st.selectbox("Select Aircraft", ["New Profile..."] + sorted(profile_names))
         
         if selected_profile == "New Profile...":
             tail_number = st.text_input("Tail Number (New)", placeholder="N123SF").upper().strip()
@@ -77,14 +84,13 @@ if check_password():
 
         aircraft_sn = st.text_input("Aircraft S/N", placeholder="e.g. 1234")
         st.divider()
-        
+
+        # Load History Logic
         if tail_number:
-            profile_path = f"{ROOT_FOLDER}/{tail_number}"
-            if not fs.exists(profile_path):
-                fs.mkdir(profile_path)
-            
-            history = sorted([f.split('/')[-1] for f in fs.ls(profile_path)], reverse=True)
-            selected_history = st.selectbox("📜 Flight History", ["-- Load Previous --"] + history)
+            tail_id = get_folder_id(tail_number, ROOT_ID)
+            history_files = drive.ListFile({'q': f"'{tail_id}' in parents and trashed=false"}).GetList()
+            history_map = {f['title']: f['id'] for f in history_files}
+            selected_history = st.selectbox("📜 Flight History", ["-- Load Previous --"] + sorted(history_map.keys(), reverse=True))
         else:
             selected_history = "-- Load Previous --"
 
@@ -99,33 +105,31 @@ if check_password():
     active_source = ""
 
     if uploaded_file:
-        try:
-            with st.spinner("Processing & Saving..."):
-                uploaded_file.seek(0)
-                df = cleaner.clean_data(uploaded_file)
-                active_source = uploaded_file.name
-                dt_stamp = f"{flight_dt.strftime('%Y%m%d')}_{flight_tm.strftime('%H%M')}"
-                save_name = f"{dt_stamp}_{active_source}"
-                save_path = f"{ROOT_FOLDER}/{tail_number}/{save_name}"
-                
-                with fs.open(save_path, "w") as f:
-                    df.to_csv(f, index=False)
-                st.sidebar.success(f"Saved: {save_name}")
-        except Exception as e:
-            st.error(f"Save Error: {e}")
+        with st.spinner("Processing & Syncing to Drive..."):
+            df = cleaner.clean_data(uploaded_file)
+            active_source = uploaded_file.name
+            dt_stamp = f"{flight_dt.strftime('%Y%m%d')}_{flight_tm.strftime('%H%M')}"
+            save_name = f"{dt_stamp}_{active_source}"
+            
+            # Save CSV to Drive
+            csv_buffer = io.StringIO()
+            df.to_csv(csv_buffer, index=False)
+            
+            f_drive = drive.CreateFile({'title': save_name, 'parents': [{'id': tail_id}]})
+            f_drive.SetContentString(csv_buffer.getvalue())
+            f_drive.Upload()
+            st.sidebar.success(f"Saved to Drive: {save_name}")
 
     elif selected_history != "-- Load Previous --":
-        try:
-            load_path = f"{ROOT_FOLDER}/{tail_number}/{selected_history}"
-            with fs.open(load_path, "r") as f:
-                df = pd.read_csv(f)
-            active_source = selected_history
-        except Exception as e:
-            st.error(f"Load Error: {e}")
+        file_id = history_map[selected_history]
+        f_drive = drive.CreateFile({'id': file_id})
+        content = f_drive.GetContentString()
+        df = pd.read_csv(io.StringIO(content))
+        active_source = selected_history
 
-    # --- 4. DASHBOARD DISPLAY ---
+    # --- 4. DASHBOARD ---
     if df is not None:
-        st.title(f"✈️ {tail_number} | Flight Analysis")
+        st.title(f"✈️ {tail_number} Analysis")
         st.caption(f"S/N: {aircraft_sn} | Source: {active_source}")
 
         m1, m2, m3, m4 = st.columns(4)
@@ -134,18 +138,8 @@ if check_password():
         with m3: st.metric("Max N1", f"{df['N1 %'].max():.1f}%")
         with m4: st.metric("Duration", f"{(len(df) / 60):.1f} min")
 
-        st.divider()
-        tab_graph, tab_data = st.tabs(["📊 Engine Graph", "📋 Raw Data"])
-
-        with tab_graph:
-            fig = visualizer.generate_dashboard(df)
-            st.plotly_chart(fig, use_container_width=True)
-
-        with tab_data:
-            st.dataframe(df, use_container_width=True)
-            header = f"# Tail: {tail_number}\n# S/N: {aircraft_sn}\n# Notes: {flight_notes}\n"
-            csv_data = header + df.to_csv(index=False)
-            st.download_button("💾 Download CSV", csv_data, f"CLEANED_{active_source}", "text/csv")
+        fig = visualizer.generate_dashboard(df)
+        st.plotly_chart(fig, use_container_width=True)
     else:
         st.title("SF50 Fleet Analytics")
-        st.info("Select a profile or upload a log in the sidebar.")
+        st.info("Ready to begin. Select a profile or upload a file in the sidebar.")
