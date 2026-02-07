@@ -13,39 +13,45 @@ def check_password():
         st.title("🔒 SF50 Data Access")
         st.text_input("Enter Dashboard Password", type="password", key="password_input")
         if st.button("Log In"):
-            # Check against the [password] section in your secrets
             try:
+                # Accessing the password secret
                 if st.session_state["password_input"] == st.secrets["password"]["password"]:
                     st.session_state["password_correct"] = True
                     st.rerun()
                 else:
                     st.error("😕 Password incorrect")
-            except:
+            except Exception:
                 st.error("Secrets not configured correctly. Check [password] block.")
         return False
     return True
 
 # Initialize GCS/Google Drive Connection
 try:
-    # Convert the secrets to a dict
+    # 1. Load secrets into a dictionary
     creds_dict = dict(st.secrets["gdrive_service_account"])
     
-    # Create formal credentials
-    # This specifically addresses the 401 error by ensuring the key is parsed correctly
-    credentials = service_account.Credentials.from_service_account_info(creds_dict)
+    # 2. Define the SCOPE (Crucial fix for the 'invalid_scope' error)
+    # This tells Google we need full access to Drive files
+    SCOPES = ['https://www.googleapis.com/auth/drive']
     
-    # Initialize the filesystem
+    # 3. Create formal credentials with the explicitly defined scope
+    credentials = service_account.Credentials.from_service_account_info(
+        creds_dict, 
+        scopes=SCOPES
+    )
+    
+    # 4. Initialize the filesystem using the scoped credentials
     fs = gcsfs.GCSFileSystem(project=creds_dict.get('project_id'), token=credentials)
     
-    # Root Folder Name
+    # Root Folder Name in Google Drive
     ROOT_FOLDER = "sf50-fleet-data" 
     
-    # Pre-flight check: Can we see the folder?
+    # Verify/Create the root directory
     if not fs.exists(ROOT_FOLDER):
         fs.mkdir(ROOT_FOLDER)
         
 except Exception as e:
-    st.error(f"Cloud Connection Error (401/Auth): {e}")
+    st.error(f"Cloud Connection Error: {e}")
     st.info("Check: 1. Is Google Drive API enabled? 2. Is the folder shared with the Service Account email?")
     st.stop()
 
@@ -80,12 +86,12 @@ if check_password():
         else:
             tail_number = selected_profile
 
-        # Metadata: Aircraft S/N
+        # Metadata: Aircraft S/N (Retained as requested)
         aircraft_sn = st.text_input("Aircraft S/N", placeholder="e.g. 1234")
         
         st.divider()
         
-        # Load History
+        # Load History logic
         if tail_number:
             profile_path = f"{ROOT_FOLDER}/{tail_number}"
             if not fs.exists(profile_path):
@@ -111,11 +117,12 @@ if check_password():
     # New Upload Logic
     if uploaded_file:
         try:
-            with st.spinner("Saving to Cloud..."):
+            with st.spinner("Processing & Saving to Drive..."):
                 uploaded_file.seek(0)
                 df = cleaner.clean_data(uploaded_file)
                 active_source = uploaded_file.name
                 
+                # Timestamped filename (Retained as requested)
                 dt_stamp = f"{flight_dt.strftime('%Y%m%d')}_{flight_tm.strftime('%H%M')}"
                 save_name = f"{dt_stamp}_{active_source}"
                 save_path = f"{ROOT_FOLDER}/{tail_number}/{save_name}"
@@ -153,13 +160,15 @@ if check_password():
         tab_graph, tab_data = st.tabs(["📊 Interactive Analytics", "📋 Raw Telemetry"])
 
         with tab_graph:
+            # High-contrast graph visualization
             fig = visualizer.generate_dashboard(df)
             st.plotly_chart(fig, use_container_width=True)
 
         with tab_data:
+            st.subheader("Processed Log Data")
             st.dataframe(df, use_container_width=True)
             
-            # Export with Metadata
+            # Export logic with Aircraft S/N and Timestamp metadata
             header = (
                 f"# Tail Number: {tail_number}\n"
                 f"# Aircraft S/N: {aircraft_sn}\n"
@@ -170,4 +179,4 @@ if check_password():
             st.download_button("💾 Export Local CSV", csv_data, f"CLEANED_{active_source}", "text/csv")
     else:
         st.title("SF50 Fleet Analytics")
-        st.info("Select a profile or upload a new G3000 log in the sidebar.")
+        st.info("Select a profile or upload a new G3000 log in the sidebar to begin.")
