@@ -5,7 +5,7 @@ import graph_flight_interactive as visualizer
 from datetime import datetime
 from pydrive2.auth import GoogleAuth
 from pydrive2.drive import GoogleDrive
-from oauth2client.service_account import ServiceAccountCredentials
+from google.oauth2 import service_account
 import io
 
 # --- 1. AUTHENTICATION & DRIVE CONNECTION ---
@@ -15,35 +15,45 @@ def check_password():
         st.text_input("Enter Dashboard Password", type="password", key="password_input")
         if st.button("Log In"):
             try:
-                # Accessing secrets
+                # Check against the [password] section in your secrets
                 if st.session_state["password_input"] == st.secrets["password"]["password"]:
                     st.session_state["password_correct"] = True
                     st.rerun()
                 else:
                     st.error("😕 Password incorrect")
-            except:
-                st.error("Secrets not configured correctly.")
+            except Exception:
+                st.error("Secrets not configured correctly. Check [password] block.")
         return False
     return True
 
 @st.cache_resource
 def get_drive_connection():
     try:
-        scope = ['https://www.googleapis.com/auth/drive']
         # Load the secret as a dictionary
         creds_dict = dict(st.secrets["gdrive_service_account"])
         
-        # FIX: The Decoder Error Fix
-        # We replace the literal string "\n" with actual newline characters
+        # FIX: The Python 3.13 RSA Key Format Fix
+        # 1. Ensure the private_key exists
+        # 2. Convert literal "\\n" into actual newlines
+        # 3. Strip any accidental whitespace around the key
         if "private_key" in creds_dict:
-            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n").strip()
             
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+        # Define the SCOPE
+        SCOPES = ['https://www.googleapis.com/auth/drive']
+        
+        # Use the modern service_account handler for Python 3.13 compatibility
+        creds = service_account.Credentials.from_service_account_info(
+            creds_dict, 
+            scopes=SCOPES
+        )
+        
         gauth = GoogleAuth()
         gauth.credentials = creds
         return GoogleDrive(gauth)
     except Exception as e:
         st.error(f"Drive Connection Error: {e}")
+        st.info("Tip: Check that your private_key in Secrets starts with -----BEGIN PRIVATE KEY-----")
         return None
 
 drive = get_drive_connection()
@@ -69,7 +79,6 @@ def get_folder_id(folder_name, parent_id=None):
 if check_password() and drive:
     st.set_page_config(layout="wide", page_title="Vision Jet Analytics", page_icon="✈️")
 
-    # High-contrast CSS
     st.markdown("""
         <style>
         [data-testid="stMetricValue"] { font-size: 1.8rem; color: #d33612; }
@@ -78,11 +87,13 @@ if check_password() and drive:
         </style>
         """, unsafe_allow_html=True)
 
+    # Root Folder Initialization
     ROOT_ID = get_folder_id("sf50-fleet-data")
 
     with st.sidebar:
         st.title("🚀 SF50 Fleet Control")
         
+        # Profile Logic
         st.subheader("📁 Aircraft Profile")
         profiles = drive.ListFile({'q': f"'{ROOT_ID}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"}).GetList()
         profile_names = [p['title'] for p in profiles]
@@ -135,11 +146,14 @@ if check_password() and drive:
             st.error(f"Upload Error: {e}")
 
     elif selected_history != "-- Load Previous --":
-        file_id = history_map[selected_history]
-        f_drive = drive.CreateFile({'id': file_id})
-        content = f_drive.GetContentString()
-        df = pd.read_csv(io.StringIO(content))
-        active_source = selected_history
+        try:
+            file_id = history_map[selected_history]
+            f_drive = drive.CreateFile({'id': file_id})
+            content = f_drive.GetContentString()
+            df = pd.read_csv(io.StringIO(content))
+            active_source = selected_history
+        except Exception as e:
+            st.error(f"Load Error: {e}")
 
     # --- 4. DASHBOARD ---
     if df is not None:
@@ -156,4 +170,4 @@ if check_password() and drive:
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.title("SF50 Fleet Analytics")
-        st.info("Ready to begin. Select a profile or upload a file in the sidebar.")
+        st.info("Ready for analysis. Select a profile or upload a file in the sidebar.")
