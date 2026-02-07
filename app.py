@@ -5,7 +5,6 @@ import graph_flight_interactive as visualizer
 
 # --- 1. AUTHENTICATION LOGIC ---
 def check_password():
-    """Returns True if the user had the correct password."""
     if "password_correct" not in st.session_state:
         st.title("🔒 SF50 Data Access")
         st.text_input("Enter Dashboard Password", type="password", key="password_input")
@@ -20,16 +19,14 @@ def check_password():
 
 # --- 2. MAIN APP ---
 if check_password():
-    # Set Page Config
     st.set_page_config(layout="wide", page_title="Vision Jet Analytics", page_icon="✈️")
 
-    # Custom CSS for Branding and Visibility
+    # Custom CSS
     st.markdown("""
         <style>
         [data-testid="stMetricValue"] { font-size: 1.8rem; color: #d33612; }
         .stTabs [data-baseweb="tab-list"] { gap: 24px; }
         .stTabs [data-baseweb="tab"] { height: 50px; font-weight: bold; }
-        section[data-testid="stSidebar"] { border-right: 1px solid #e6e9ef; }
         </style>
         """, unsafe_allow_html=True)
 
@@ -38,19 +35,27 @@ if check_password():
         st.title("🚀 SF50 Control")
         st.divider()
         uploaded_file = st.file_uploader("Upload Raw Engine CSV", type="csv")
+        
+        # NEW: FLIGHT METADATA SECTION
         st.divider()
-        st.info("**Log Tip:** Use the raw CSV export from the G3000 system. The app will automatically filter and format columns.")
+        st.subheader("📝 Flight Metadata")
+        tail_number = st.text_input("Tail Number", placeholder="e.g. N123SF")
+        pilot_name = st.text_input("Pilot Name")
+        flight_notes = st.text_area("Flight Notes", placeholder="Describe flight phase or issues...")
+        
+        st.divider()
+        st.info("**Log Tip:** Use raw CSV exports from the G3000.")
 
     # --- MAIN DASHBOARD AREA ---
     if uploaded_file:
         try:
             with st.spinner("Analyzing SF50 Telemetry..."):
-                # Reset file pointer
                 uploaded_file.seek(0)
                 df = cleaner.clean_data(uploaded_file)
             
             st.title("✈️ SF50 Vision Jet Performance")
-            st.caption(f"Source: {uploaded_file.name}")
+            if tail_number:
+                st.subheader(f"Aircraft: {tail_number}")
 
             # --- METRICS ROW ---
             m1, m2, m3, m4 = st.columns(4)
@@ -61,7 +66,6 @@ if check_password():
             with m3:
                 st.metric("Max N1", f"{df['N1 %'].max():.1f}%")
             with m4:
-                # Assuming 1Hz logging
                 st.metric("Log Duration", f"{(len(df) / 60):.1f} min")
 
             st.divider()
@@ -76,23 +80,27 @@ if check_password():
             with tab_data:
                 st.subheader("Processed Log Data")
                 st.dataframe(df, use_container_width=True)
-                csv = df.to_csv(index=False).encode('utf-8')
-                st.download_button("💾 Export Cleaned CSV", csv, f"CLEANED_{uploaded_file.name}", "text/csv")
+                
+                # UPDATED: Download logic to include Metadata at the top
+                metadata_header = (
+                    f"# Tail Number: {tail_number}\n"
+                    f"# Pilot: {pilot_name}\n"
+                    f"# Notes: {flight_notes.replace(chr(10), ' ')}\n"
+                    f"# Export Date: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}\n"
+                )
+                csv_body = df.to_csv(index=False)
+                final_csv = metadata_header + csv_body
+
+                st.download_button(
+                    label="💾 Export Cleaned CSV with Notes", 
+                    data=final_csv, 
+                    file_name=f"CLEANED_{tail_number if tail_number else 'SF50'}_{uploaded_file.name}", 
+                    mime="text/csv"
+                )
 
         except Exception as e:
-            st.error(f"Error processing flight data: {e}")
+            st.error(f"Error: {e}")
     else:
-        # WELCOME STATE (Text-only for stability)
         st.title("SF50 Vision Jet Analytics")
         st.subheader("Ready for post-flight analysis.")
-        st.write("---")
-        st.markdown("""
-        ### Getting Started
-        1. Insert your SD card and locate the engine log CSV.
-        2. Use the **sidebar on the left** to upload the file.
-        3. The dashboard will automatically:
-            * Clean and rename your telemetry columns.
-            * Highlight peak performance metrics.
-            * Generate interactive multi-system graphs.
-        """)
-        st.info("👈 Please upload a CSV file in the sidebar to begin.")
+        st.info("👈 Please upload a CSV file and enter flight details in the sidebar to begin.")
