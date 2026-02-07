@@ -10,8 +10,7 @@ X_AXIS_COL = "Time"
 BIG_NUMBER_THRESHOLD = 500
 
 def generate_dashboard(df):
-    """Refactored to accept a DataFrame and return a Plotly Figure."""
-    # Cleanup Data types
+    """Refactored to accept a DataFrame and return a Plotly Figure with enhanced contrast."""
     if X_AXIS_COL in df.columns:
          df[X_AXIS_COL] = pd.to_numeric(df[X_AXIS_COL], errors='coerce')
     
@@ -24,7 +23,6 @@ def generate_dashboard(df):
             use_secondary = not (max_val > BIG_NUMBER_THRESHOLD)
             unit = UNITS.get(title, "") 
 
-            # Add Data Trace
             fig.add_trace(
                 go.Scatter(x=df[X_AXIS_COL], y=df[col_name], name=title, mode='lines', 
                            visible='legendonly', legendgroup=title,
@@ -32,7 +30,6 @@ def generate_dashboard(df):
                 secondary_y=use_secondary, 
             )
 
-            # Add Limit Lines
             if title in LIMIT_LINES:
                 for val, color, label in LIMIT_LINES[title]:
                     fig.add_trace(
@@ -44,6 +41,19 @@ def generate_dashboard(df):
                         secondary_y=use_secondary 
                     )
 
-    fig.update_layout(height=800, template="plotly_white", hovermode="x unified",
-                      legend=dict(title="Click to Toggle:", y=0.99, x=1.05))
-    return fig # Returns the figure to the app
+    # UPDATED STYLING: Added background color and axis borders for contrast
+    fig.update_layout(
+        height=800, 
+        template="plotly_white", 
+        hovermode="x unified",
+        plot_bgcolor="#f8f9fa",  # Light grey plot area to distinguish from white page
+        paper_bgcolor="white",    # Keep surrounding area white
+        legend=dict(title="Click to Toggle:", y=0.99, x=1.05),
+        xaxis=dict(
+            showline=True, linewidth=1, linecolor='black', mirror=True,
+            gridcolor='white', rangeslider=dict(visible=True)
+        ),
+        yaxis=dict(showline=True, linewidth=1, linecolor='black', mirror=True, gridcolor='white'),
+        yaxis2=dict(showline=True, linewidth=1, linecolor='black', mirror=True, gridcolor='white')
+    )
+    return fig
