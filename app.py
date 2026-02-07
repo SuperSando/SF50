@@ -4,6 +4,7 @@ import clean_flight_data as cleaner
 import graph_flight_interactive as visualizer
 from datetime import datetime
 import gcsfs
+from google.oauth2 import service_account
 
 # --- 1. AUTHENTICATION & CLOUD CONNECTION ---
 def check_password():
@@ -12,7 +13,8 @@ def check_password():
         st.title("🔒 SF50 Data Access")
         st.text_input("Enter Dashboard Password", type="password", key="password_input")
         if st.button("Log In"):
-            if st.session_state["password_input"] == st.secrets["password"]:
+            # Accessing the password defined in your Streamlit Secrets
+            if st.session_state["password_input"] == st.secrets["password"]["password"]:
                 st.session_state["password_correct"] = True
                 st.rerun()
             else:
@@ -22,27 +24,28 @@ def check_password():
 
 # Initialize GCS/Google Drive Connection
 try:
-    # FIX: Explicitly wrap the secret in dict() so gcsfs understands the format
-    service_account_info = dict(st.secrets["gdrive_service_account"])
+    # 1. Create formal credentials to solve the 'refresh_token' error
+    creds_dict = dict(st.secrets["gdrive_service_account"])
+    credentials = service_account.Credentials.from_service_account_info(creds_dict)
     
-    # Initialize the filesystem
-    fs = gcsfs.GCSFileSystem(token=service_account_info)
+    # 2. Initialize the filesystem using the formal credentials object
+    fs = gcsfs.GCSFileSystem(project=creds_dict['project_id'], token=credentials)
     
-    # Bucket/Folder Name (use lowercase and hyphens for GCS compatibility)
+    # Root Folder Name (Lowercase/hyphens recommended for cloud storage compatibility)
     ROOT_FOLDER = "sf50-fleet-data" 
     
     if not fs.exists(ROOT_FOLDER):
         fs.mkdir(ROOT_FOLDER)
 except Exception as e:
     st.error(f"Cloud Connection Error: {e}")
-    st.info("Ensure your Secrets are formatted as [gdrive_service_account] in TOML.")
+    st.info("Check your Secrets. The private_key must handle newlines correctly.")
     st.stop()
 
 # --- 2. MAIN APP ---
 if check_password():
     st.set_page_config(layout="wide", page_title="Vision Jet Analytics", page_icon="✈️")
 
-    # Custom CSS for UI branding and Metric contrast
+    # Custom CSS for Branding and Metrics
     st.markdown("""
         <style>
         [data-testid="stMetricValue"] { font-size: 1.8rem; color: #d33612; }
@@ -57,7 +60,7 @@ if check_password():
         
         st.subheader("📁 Aircraft Profile")
         try:
-            # List existing tail number folders
+            # List existing tail number folders in the cloud
             existing_profiles = [f.split('/')[-1] for f in fs.ls(ROOT_FOLDER) if fs.isdir(f)]
         except:
             existing_profiles = []
@@ -69,7 +72,7 @@ if check_password():
         else:
             tail_number = selected_profile
 
-        # Profile Metadata: Aircraft S/N
+        # New: Aircraft S/N Metadata
         aircraft_sn = st.text_input("Aircraft S/N", placeholder="e.g. 1234")
         
         st.divider()
@@ -80,6 +83,7 @@ if check_password():
             if not fs.exists(profile_path):
                 fs.mkdir(profile_path)
             
+            # Fetch history files sorted by most recent
             history = sorted([f.split('/')[-1] for f in fs.ls(profile_path)], reverse=True)
             selected_history = st.selectbox("📜 Flight History", ["-- Load Previous --"] + history)
         else:
@@ -93,30 +97,31 @@ if check_password():
         flight_tm = st.time_input("Flight Time", value=datetime.now().time())
         flight_notes = st.text_area("Flight Notes")
 
-    # --- 3. DATA LOGIC ---
+    # --- 3. DATA LOGIC: SAVE & LOAD ---
     df = None
     active_source = ""
 
     # New Upload Logic
     if uploaded_file:
         try:
-            with st.spinner("Uploading to Cloud..."):
+            with st.spinner("Analyzing & Saving to Cloud..."):
                 uploaded_file.seek(0)
                 df = cleaner.clean_data(uploaded_file)
                 active_source = uploaded_file.name
                 
-                # Naming Convention: YYYYMMDD_HHMM_OriginalName.csv
+                # Naming Convention: YYYYMMDD_HHMM_FileName.csv
                 dt_stamp = f"{flight_dt.strftime('%Y%m%d')}_{flight_tm.strftime('%H%M')}"
                 save_name = f"{dt_stamp}_{active_source}"
                 save_path = f"{ROOT_FOLDER}/{tail_number}/{save_name}"
                 
+                # Write to Cloud
                 with fs.open(save_path, "w") as f:
                     df.to_csv(f, index=False)
-                st.sidebar.success(f"Log Saved to {tail_number}")
+                st.sidebar.success(f"Log Saved to {tail_number} Profile")
         except Exception as e:
-            st.error(f"Upload Error: {e}")
+            st.error(f"Upload/Save Error: {e}")
 
-    # History Selection Logic
+    # History Loading Logic
     elif selected_history != "-- Load Previous --":
         try:
             load_path = f"{ROOT_FOLDER}/{tail_number}/{selected_history}"
@@ -124,7 +129,7 @@ if check_password():
                 df = pd.read_csv(f)
             active_source = selected_history
         except Exception as e:
-            st.error(f"Load Error: {e}")
+            st.error(f"Cloud Load Error: {e}")
 
     # --- 4. DASHBOARD DISPLAY ---
     if df is not None:
@@ -140,15 +145,16 @@ if check_password():
 
         st.divider()
 
+        # Content Tabs
         tab_graph, tab_data = st.tabs(["📊 Engine & Systems Graph", "📋 Raw Telemetry"])
 
         with tab_graph:
-            # Visualizer already updated for high contrast in previous step
+            # This uses your updated high-contrast visualizer script
             fig = visualizer.generate_dashboard(df)
             st.plotly_chart(fig, use_container_width=True)
 
         with tab_data:
-            st.subheader("Processed Log Data")
+            st.subheader("Log Data Table")
             st.dataframe(df, use_container_width=True)
             
             # Export with Metadata Header
@@ -159,7 +165,7 @@ if check_password():
                 f"# Notes: {flight_notes.replace(chr(10), ' ')}\n"
             )
             csv_data = header + df.to_csv(index=False)
-            st.download_button("💾 Download Local Copy", csv_data, f"CLEANED_{active_source}", "text/csv")
+            st.download_button("💾 Export Local CSV", csv_data, f"CLEANED_{active_source}", "text/csv")
     else:
         st.title("SF50 Fleet Analytics")
-        st.info("Select an aircraft profile or upload a new G3000 log to begin.")
+        st.info("Select an aircraft profile or upload a new engine log in the sidebar to begin.")
