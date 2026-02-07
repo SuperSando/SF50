@@ -3,8 +3,9 @@ import pandas as pd
 import clean_flight_data as cleaner
 import graph_flight_interactive as visualizer
 from datetime import datetime
+from st_filesystems import GoogleDriveFileSystem
 
-# --- 1. AUTHENTICATION LOGIC ---
+# --- 1. AUTHENTICATION & DRIVE CONNECTION ---
 def check_password():
     if "password_correct" not in st.session_state:
         st.title("🔒 SF50 Data Access")
@@ -18,10 +19,24 @@ def check_password():
         return False
     return True
 
+# Initialize Google Drive Connection using TOML Secrets
+try:
+    # This looks for the [gdrive_service_account] block in your secrets
+    fs = GoogleDriveFileSystem(token=st.secrets["gdrive_service_account"])
+    ROOT_FOLDER = "SF50_Fleet_Data"
+    
+    # Ensure the root folder exists in Drive
+    if not fs.exists(ROOT_FOLDER):
+        fs.mkdir(ROOT_FOLDER)
+except Exception as e:
+    st.error(f"Google Drive Connection Error: {e}")
+    st.stop()
+
 # --- 2. MAIN APP ---
 if check_password():
     st.set_page_config(layout="wide", page_title="Vision Jet Analytics", page_icon="✈️")
 
+    # Custom Styling
     st.markdown("""
         <style>
         [data-testid="stMetricValue"] { font-size: 1.8rem; color: #d33612; }
@@ -30,80 +45,116 @@ if check_password():
         </style>
         """, unsafe_allow_html=True)
 
-    # --- SIDEBAR CONTROLS ---
+    # --- SIDEBAR: PROFILES & UPLOADS ---
     with st.sidebar:
-        st.title("🚀 SF50 Control")
-        st.divider()
-        uploaded_file = st.file_uploader("Upload Raw Engine CSV", type="csv")
+        st.title("🚀 SF50 Fleet Control")
+        
+        # Aircraft Profile Selection
+        st.subheader("📁 Aircraft Profile")
+        try:
+            # List existing folders (tail numbers) in Google Drive
+            existing_profiles = [f.split('/')[-1] for f in fs.ls(ROOT_FOLDER) if fs.isdir(f)]
+        except:
+            existing_profiles = []
+            
+        selected_profile = st.selectbox("Select Aircraft", ["New Profile..."] + existing_profiles)
+        
+        if selected_profile == "New Profile...":
+            tail_number = st.text_input("Tail Number (New)", placeholder="N123SF").upper().strip()
+        else:
+            tail_number = selected_profile
+
+        # Profile Metadata
+        aircraft_sn = st.text_input("Aircraft S/N", placeholder="e.g. 1234")
         
         st.divider()
-        st.subheader("📝 Flight Metadata")
-        tail_number = st.text_input("Tail Number", placeholder="e.g. N123SF")
-        # UPDATED: Changed from Pilot Name to Aircraft S/N
-        aircraft_sn = st.text_input("Aircraft S/N", placeholder="e.g. 1234")
-        # NEW: Added Date/Time input
+        
+        # Load History from Google Drive for this specific Tail Number
+        if tail_number:
+            profile_path = f"{ROOT_FOLDER}/{tail_number}"
+            if not fs.exists(profile_path):
+                fs.mkdir(profile_path)
+            
+            history = sorted([f.split('/')[-1] for f in fs.ls(profile_path)], reverse=True)
+            selected_history = st.selectbox("📜 Flight History", ["-- Load Previous --"] + history)
+        else:
+            selected_history = "-- Load Previous --"
+
+        st.divider()
+        uploaded_file = st.file_uploader("Upload New Log", type="csv")
+        
+        st.subheader("📝 Flight Details")
         flight_dt = st.date_input("Flight Date", value=datetime.now())
         flight_tm = st.time_input("Flight Time", value=datetime.now().time())
-        
-        flight_notes = st.text_area("Flight Notes", placeholder="Describe flight phase or issues...")
-        
-        st.divider()
-        st.info("**Log Tip:** Use raw CSV exports from the G3000.")
+        flight_notes = st.text_area("Flight Notes")
 
-    # --- MAIN DASHBOARD AREA ---
+    # --- 3. DATA LOGIC: SAVE & LOAD ---
+    df = None
+    active_source = ""
+
+    # Priority 1: New Upload
     if uploaded_file:
         try:
-            with st.spinner("Analyzing SF50 Telemetry..."):
+            with st.spinner("Processing & Uploading to Cloud..."):
                 uploaded_file.seek(0)
                 df = cleaner.clean_data(uploaded_file)
-            
-            st.title("✈️ SF50 Vision Jet Performance")
-            
-            # --- METRICS ROW ---
-            m1, m2, m3, m4 = st.columns(4)
-            with m1:
-                st.metric("Max GS", f"{df['Groundspeed'].max():.0f} kts")
-            with m2:
-                st.metric("Peak ITT", f"{df['ITT (F)'].max():.0f} °F")
-            with m3:
-                st.metric("Max N1", f"{df['N1 %'].max():.1f}%")
-            with m4:
-                st.metric("Log Duration", f"{(len(df) / 60):.1f} min")
-
-            st.divider()
-
-            # --- TABS ---
-            tab_graph, tab_data = st.tabs(["📊 Engine & Systems Graph", "📋 Raw Telemetry"])
-
-            with tab_graph:
-                fig = visualizer.generate_dashboard(df)
-                st.plotly_chart(fig, use_container_width=True)
-
-            with tab_data:
-                st.subheader("Processed Log Data")
-                st.dataframe(df, use_container_width=True)
+                active_source = uploaded_file.name
                 
-                # UPDATED: Download logic to include S/N and Date/Time
-                metadata_header = (
-                    f"# Tail Number: {tail_number}\n"
-                    f"# Aircraft S/N: {aircraft_sn}\n"
-                    f"# Flight Timestamp: {flight_dt} {flight_tm}\n"
-                    f"# Notes: {flight_notes.replace(chr(10), ' ')}\n"
-                    f"# Export Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
-                )
-                csv_body = df.to_csv(index=False)
-                final_csv = metadata_header + csv_body
-
-                st.download_button(
-                    label="💾 Export Cleaned CSV with Notes", 
-                    data=final_csv, 
-                    file_name=f"CLEANED_{tail_number if tail_number else 'SF50'}_{uploaded_file.name}", 
-                    mime="text/csv"
-                )
-
+                # Format Date/Time for Filename
+                dt_stamp = f"{flight_dt.strftime('%Y%m%d')}_{flight_tm.strftime('%H%M')}"
+                save_name = f"{dt_stamp}_{active_source}"
+                save_path = f"{ROOT_FOLDER}/{tail_number}/{save_name}"
+                
+                # Save to Google Drive
+                with fs.open(save_path, "w") as f:
+                    df.to_csv(f, index=False)
+                st.sidebar.success(f"Log Saved to {tail_number} Profile")
         except Exception as e:
-            st.error(f"Error: {e}")
+            st.error(f"Upload Error: {e}")
+
+    # Priority 2: History Selection
+    elif selected_history != "-- Load Previous --":
+        try:
+            load_path = f"{ROOT_FOLDER}/{tail_number}/{selected_history}"
+            with fs.open(load_path, "r") as f:
+                df = pd.read_csv(f)
+            active_source = selected_history
+        except Exception as e:
+            st.error(f"Load Error: {e}")
+
+    # --- 4. DASHBOARD DISPLAY ---
+    if df is not None:
+        st.title(f"✈️ {tail_number} | Flight Analysis")
+        st.caption(f"Log Source: {active_source} | S/N: {aircraft_sn}")
+
+        # Metrics Row
+        m1, m2, m3, m4 = st.columns(4)
+        with m1: st.metric("Max GS", f"{df['Groundspeed'].max():.0f} kts")
+        with m2: st.metric("Peak ITT", f"{df['ITT (F)'].max():.0f} °F")
+        with m3: st.metric("Max N1", f"{df['N1 %'].max():.1f}%")
+        with m4: st.metric("Duration", f"{(len(df) / 60):.1f} min")
+
+        st.divider()
+
+        tab_graph, tab_data = st.tabs(["📊 Interactive Analytics", "📋 Raw Telemetry"])
+
+        with tab_graph:
+            fig = visualizer.generate_dashboard(df)
+            st.plotly_chart(fig, use_container_width=True)
+
+        with tab_data:
+            st.dataframe(df, use_container_width=True)
+            
+            # Export with Metadata Header
+            header = (
+                f"# Tail Number: {tail_number}\n"
+                f"# Aircraft S/N: {aircraft_sn}\n"
+                f"# Flight Time: {flight_dt} {flight_tm}\n"
+                f"# Notes: {flight_notes.replace(chr(10), ' ')}\n"
+            )
+            csv_data = header + df.to_csv(index=False)
+            st.download_button("💾 Download Local Copy", csv_data, f"CLEANED_{active_source}", "text/csv")
     else:
-        st.title("SF50 Vision Jet Analytics")
-        st.subheader("Ready for post-flight analysis.")
-        st.info("👈 Please upload a CSV file and enter flight details in the sidebar to begin.")
+        st.title("SF50 Fleet Analytics")
+        st.subheader("Dashboard Ready")
+        st.info("Select an aircraft profile or upload a new G3000 log in the sidebar to begin.")
