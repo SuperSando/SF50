@@ -24,12 +24,15 @@ def check_password():
 @st.cache_resource
 def get_github_repo():
     try:
-        # Use a token stored in Streamlit Secrets
-        g = Github(st.secrets["github_token"])
-        # Format: "Username/RepositoryName"
-        repo = g.get_repo(st.secrets["repo_path"]) 
+        # We drill down specifically into the 'github_token' key
+        token_str = st.secrets["github_token"]["github_token"]
+        repo_path_str = st.secrets["repo_path"]["repo_path"]
+        
+        g = Github(token_str)
+        repo = g.get_repo(repo_path_str) 
         return repo
     except Exception as e:
+        # This will now show us exactly what went wrong if it persists
         st.error(f"GitHub Connection Error: {e}")
         return None
 
