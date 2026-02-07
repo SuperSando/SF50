@@ -39,7 +39,7 @@ if check_password():
         st.divider()
         uploaded_file = st.file_uploader("Upload Raw Engine CSV", type="csv")
         st.divider()
-        st.info("**Log Tip:** Use the raw CSV export from the G3000.")
+        st.info("**Log Tip:** Use the raw CSV export from the G3000 system. The app will automatically filter and format columns.")
 
     # --- MAIN DASHBOARD AREA ---
     if uploaded_file:
@@ -61,6 +61,7 @@ if check_password():
             with m3:
                 st.metric("Max N1", f"{df['N1 %'].max():.1f}%")
             with m4:
+                # Assuming 1Hz logging
                 st.metric("Log Duration", f"{(len(df) / 60):.1f} min")
 
             st.divider()
@@ -73,6 +74,7 @@ if check_password():
                 st.plotly_chart(fig, use_container_width=True)
 
             with tab_data:
+                st.subheader("Processed Log Data")
                 st.dataframe(df, use_container_width=True)
                 csv = df.to_csv(index=False).encode('utf-8')
                 st.download_button("💾 Export Cleaned CSV", csv, f"CLEANED_{uploaded_file.name}", "text/csv")
@@ -80,11 +82,17 @@ if check_password():
         except Exception as e:
             st.error(f"Error processing flight data: {e}")
     else:
-        # WELCOME STATE
+        # WELCOME STATE (Text-only for stability)
         st.title("SF50 Vision Jet Analytics")
-        st.write("Ready for post-flight analysis. Please upload your engine logs in the sidebar.")
-        
-        # Reliable SF50 Image link
-        st.image("https://www.aviationwire.jp/wp-content/uploads/2019/04/190410_01_cirrus_sf50.jpg", 
-                 caption="Cirrus Vision Jet SF50", 
-                 use_container_width=True)
+        st.subheader("Ready for post-flight analysis.")
+        st.write("---")
+        st.markdown("""
+        ### Getting Started
+        1. Insert your SD card and locate the engine log CSV.
+        2. Use the **sidebar on the left** to upload the file.
+        3. The dashboard will automatically:
+            * Clean and rename your telemetry columns.
+            * Highlight peak performance metrics.
+            * Generate interactive multi-system graphs.
+        """)
+        st.info("👈 Please upload a CSV file in the sidebar to begin.")
