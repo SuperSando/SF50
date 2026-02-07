@@ -5,6 +5,7 @@ import graph_flight_interactive as visualizer
 
 # --- 1. AUTHENTICATION LOGIC ---
 def check_password():
+    """Returns True if the user had the correct password."""
     if "password_correct" not in st.session_state:
         st.title("🔒 SF50 Data Access")
         st.text_input("Enter Dashboard Password", type="password", key="password_input")
@@ -19,22 +20,21 @@ def check_password():
 
 # --- 2. MAIN APP ---
 if check_password():
+    # Set Page Config
     st.set_page_config(layout="wide", page_title="Vision Jet Analytics", page_icon="✈️")
 
-    # Fixed CSS: Removed the dark sidebar background that was causing visibility issues
+    # Custom CSS for Branding and Visibility
     st.markdown("""
         <style>
         [data-testid="stMetricValue"] { font-size: 1.8rem; color: #d33612; }
         .stTabs [data-baseweb="tab-list"] { gap: 24px; }
         .stTabs [data-baseweb="tab"] { height: 50px; font-weight: bold; }
-        /* Cleaned up sidebar to ensure text is visible */
         section[data-testid="stSidebar"] { border-right: 1px solid #e6e9ef; }
         </style>
         """, unsafe_allow_html=True)
 
     # --- SIDEBAR CONTROLS ---
     with st.sidebar:
-        # Use a highly reliable icon
         st.title("🚀 SF50 Control")
         st.divider()
         uploaded_file = st.file_uploader("Upload Raw Engine CSV", type="csv")
@@ -45,12 +45,13 @@ if check_password():
     if uploaded_file:
         try:
             with st.spinner("Analyzing SF50 Telemetry..."):
-                # Reset file pointer to beginning in case it was read elsewhere
+                # Reset file pointer
                 uploaded_file.seek(0)
                 df = cleaner.clean_data(uploaded_file)
             
             st.title("✈️ SF50 Vision Jet Performance")
-            
+            st.caption(f"Source: {uploaded_file.name}")
+
             # --- METRICS ROW ---
             m1, m2, m3, m4 = st.columns(4)
             with m1:
@@ -77,22 +78,13 @@ if check_password():
                 st.download_button("💾 Export Cleaned CSV", csv, f"CLEANED_{uploaded_file.name}", "text/csv")
 
         except Exception as e:
-            st.error(f"Error: {e}")
+            st.error(f"Error processing flight data: {e}")
     else:
-        # WELCOME STATE - Using a new high-reliability image link
+        # WELCOME STATE
         st.title("SF50 Vision Jet Analytics")
         st.write("Ready for post-flight analysis. Please upload your engine logs in the sidebar.")
         
-        # New stable image link for SF50
-        st.image("https://images.fineartamerica.com/images/artworkimages/mediumlarge/3/cirrus-vision-sf50-vision-jet-air-history.jpg", 
+        # Reliable SF50 Image link
+        st.image("https://www.aviationwire.jp/wp-content/uploads/2019/04/190410_01_cirrus_sf50.jpg", 
                  caption="Cirrus Vision Jet SF50", 
                  use_container_width=True)
-
----
-
-### Why this fix works:
-1.  **Sidebar Visibility:** I removed the `background-color: #1c1e21;` line. Streamlit's default sidebar handles light/dark mode better on its own without custom overrides that can "hide" the menu items.
-2.  **Image Loading:** I replaced the Wikimedia link with a direct JPG link that is more compatible with Streamlit's `st.image` function.
-3.  **Authentication Stability:** I tweaked the `check_password` logic slightly to include a "Log In" button, which helps Streamlit manage the "state" of the page more reliably.
-
-**Would you like me to show you how to host the image on GitHub so it never breaks again?**
