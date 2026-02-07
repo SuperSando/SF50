@@ -34,20 +34,18 @@ if check_password():
         [data-testid="stMetricValue"] { font-size: 1.8rem; color: #d33612; }
         .stTabs [data-baseweb="tab-list"] { gap: 24px; }
         .stTabs [data-baseweb="tab"] { height: 50px; white-space: pre-wrap; font-weight: bold; }
-        /* Style the sidebar jet icon */
-        [data-testid="stSidebar"] img { border-radius: 10px; }
+        section[data-testid="stSidebar"] { background-color: #1c1e21; color: white; }
         </style>
         """, unsafe_allow_html=True)
 
     # --- SIDEBAR CONTROLS ---
     with st.sidebar:
-        # Replaced the icon with a Jet icon
         st.image("https://cdn-icons-png.flaticon.com/512/2830/2830305.png", width=80)
         st.title("SF50 Control")
         st.divider()
         uploaded_file = st.file_uploader("Upload Raw Engine CSV", type="csv")
         st.divider()
-        st.info("**Instructions:** Upload the raw CSV from the SD card. The cleaner handles the column filtering and renaming for the G2/G2+ configurations.")
+        st.info("**Log Tip:** The cleaner is optimized for G2/G2+ Vision Jet logs. Ensure the CSV is the raw export from the G1000/G3000 system.")
 
     # --- MAIN DASHBOARD AREA ---
     if uploaded_file:
@@ -72,7 +70,7 @@ if check_password():
                 max_n1 = df['N1 %'].max() if 'N1 %' in df.columns else 0
                 st.metric("Max N1", f"{max_n1:.1f}%")
             with m4:
-                # Assuming 1Hz logging, convert samples to approximate minutes
+                # Calculate Duration (Assuming 1Hz logging)
                 duration_mins = len(df) / 60
                 st.metric("Log Duration", f"{duration_mins:.1f} min")
 
@@ -102,11 +100,11 @@ if check_password():
             st.error(f"Error processing file: {e}")
             st.exception(e) 
     else:
-        # WELCOME STATE - Replaced bus with SF50
+        # WELCOME STATE - Explicit SF50 Image
         st.title("SF50 Vision Jet Analytics")
         st.write("Ready for post-flight analysis. Please upload your engine logs in the sidebar.")
         
-        # Display an SF50 Image
-        st.image("https://images.unsplash.com/photo-1599059813005-11265ba4b4ce?auto=format&fit=crop&q=80&w=1200", 
-                 caption="Cirrus Vision Jet SF50 Pipeline", 
+        # Using a reliable image of a Cirrus Vision Jet
+        st.image("https://upload.wikimedia.org/wikipedia/commons/e/e0/Cirrus_Vision_SF50_N271SF.jpg", 
+                 caption="Cirrus Vision Jet SF50", 
                  use_container_width=True)
