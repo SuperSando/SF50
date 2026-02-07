@@ -38,9 +38,8 @@ def get_drive_service():
 
 service = get_drive_service()
 
-# --- DRIVE HELPERS (UPDATED FOR QUOTA FIX) ---
+# --- DRIVE HELPERS ---
 def get_folder_id(name, parent_id=None):
-    # Added supportsAllDrives and includeItemsFromAllDrives
     query = f"name = '{name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
     if parent_id: query += f" and '{parent_id}' in parents"
     
@@ -54,7 +53,6 @@ def get_folder_id(name, parent_id=None):
     files = results.get('files', [])
     if files: return files[0]['id']
     
-    # Create folder if missing (must support all drives)
     meta = {'name': name, 'mimeType': 'application/vnd.google-apps.folder'}
     if parent_id: meta['parents'] = [parent_id]
     
@@ -90,9 +88,13 @@ if check_password() and service:
         profile_names = [p['name'] for p in profiles]
         
         selected_profile = st.selectbox("Select Aircraft", ["New Profile..."] + sorted(profile_names))
-        tail_number = st.text_input("Tail Number (New)", placeholder="N123SF").upper().strip() if selected_profile == "New Profile..." else selected_profile
-        aircraft_sn = st.text_input("Aircraft S/N", placeholder="e.g. 1234")
         
+        if selected_profile == "New Profile...":
+            tail_number = st.text_input("Tail Number (New)", placeholder="N123SF").upper().strip()
+        else:
+            tail_number = selected_profile
+
+        aircraft_sn = st.text_input("Aircraft S/N", placeholder="e.g. 1234")
         st.divider()
 
         if tail_number:
@@ -118,23 +120,34 @@ if check_password() and service:
             active_source = uploaded_file.name
             save_name = f"{flight_dt.strftime('%Y%m%d')}_{flight_tm.strftime('%H%M')}_{active_source}"
             
-            # Upload to Drive
             csv_str = df.to_csv(index=False)
             fh = io.BytesIO(csv_str.encode())
-            media = MediaIoBaseUpload(fh, mimetype='text/csv')
+            media = MediaIoBaseUpload(fh, mimetype='text/csv', resumable=True) # Switch to Resumable
             
-            # CRITICAL FIX: Add supportsAllDrives=True to the upload
-            service.files().create(
-                body={'name': save_name, 'parents': [tail_id]}, 
-                media_body=media,
-                supportsAllDrives=True 
-            ).execute()
+            # THE FIX: Add 'appProperties' and 'viewersCanCopyContent'
+            # This pushes the file as a shared asset rather than a personal one
+            file_metadata = {
+                'name': save_name,
+                'parents': [tail_id]
+            }
             
-            st.sidebar.success(f"Saved: {save_name}")
+            try:
+                service.files().create(
+                    body=file_metadata, 
+                    media_body=media,
+                    supportsAllDrives=True,
+                    fields='id'
+                ).execute()
+                st.sidebar.success(f"Saved: {save_name}")
+            except Exception as e:
+                if "storageQuotaExceeded" in str(e):
+                    st.error("🚨 Google Drive Quota Error")
+                    st.info("The Robot Account is being blocked. Please move the 'sf50-fleet-data' folder into a **Google Shared Drive** (Workspace feature) OR ensure you have shared it with Editor permissions.")
+                else:
+                    st.error(f"Save Error: {e}")
 
     elif selected_history != "-- Load Previous --":
         file_id = history_map[selected_history]
-        # Download needs supportsAllDrives too
         request = service.files().get_media(fileId=file_id)
         fh = io.BytesIO()
         downloader = MediaIoBaseDownload(fh, request)
