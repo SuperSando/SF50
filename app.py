@@ -15,34 +15,31 @@ def check_password():
         st.text_input("Enter Dashboard Password", type="password", key="password_input")
         if st.button("Log In"):
             try:
-                # Check against the [password] section in your secrets
                 if st.session_state["password_input"] == st.secrets["password"]["password"]:
                     st.session_state["password_correct"] = True
                     st.rerun()
                 else:
                     st.error("😕 Password incorrect")
             except Exception:
-                st.error("Secrets not configured correctly. Check [password] block.")
+                st.error("Secrets not configured correctly. Check the [password] block.")
         return False
     return True
 
 @st.cache_resource
 def get_drive_connection():
     try:
-        # Load the secret as a dictionary
         creds_dict = dict(st.secrets["gdrive_service_account"])
         
-        # FIX: The Python 3.13 RSA Key Format Fix
-        # 1. Ensure the private_key exists
-        # 2. Convert literal "\\n" into actual newlines
-        # 3. Strip any accidental whitespace around the key
+        # FINAL RSA KEY CLEANER: Handles Python 3.13 decoder requirements
         if "private_key" in creds_dict:
-            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n").strip()
+            pk = creds_dict["private_key"]
+            # 1. Replace escaped newlines if they exist
+            pk = pk.replace("\\n", "\n")
+            # 2. Ensure the string is clean of accidental wrapping quotes or spaces
+            pk = pk.strip().strip("'").strip('"')
+            creds_dict["private_key"] = pk
             
-        # Define the SCOPE
         SCOPES = ['https://www.googleapis.com/auth/drive']
-        
-        # Use the modern service_account handler for Python 3.13 compatibility
         creds = service_account.Credentials.from_service_account_info(
             creds_dict, 
             scopes=SCOPES
@@ -53,7 +50,7 @@ def get_drive_connection():
         return GoogleDrive(gauth)
     except Exception as e:
         st.error(f"Drive Connection Error: {e}")
-        st.info("Tip: Check that your private_key in Secrets starts with -----BEGIN PRIVATE KEY-----")
+        st.info("Check: Is the private_key pasted correctly between triple quotes in Secrets?")
         return None
 
 drive = get_drive_connection()
@@ -87,14 +84,12 @@ if check_password() and drive:
         </style>
         """, unsafe_allow_html=True)
 
-    # Root Folder Initialization
     ROOT_ID = get_folder_id("sf50-fleet-data")
 
     with st.sidebar:
         st.title("🚀 SF50 Fleet Control")
-        
-        # Profile Logic
         st.subheader("📁 Aircraft Profile")
+        
         profiles = drive.ListFile({'q': f"'{ROOT_ID}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"}).GetList()
         profile_names = [p['title'] for p in profiles]
         
