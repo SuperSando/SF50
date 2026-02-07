@@ -5,3 +5,4 @@ altair==4.2.2
 gcsfs
 fsspec
 google-auth
+google-api-python-client
