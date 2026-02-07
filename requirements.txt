@@ -2,6 +2,4 @@ pandas
 plotly
 streamlit>=1.31.0
 altair==4.2.2
-google-api-python-client
-google-auth-httplib2
-google-auth-oauthlib
+PyGithub
