@@ -6,6 +6,7 @@ from datetime import datetime
 from pydrive2.auth import GoogleAuth
 from pydrive2.drive import GoogleDrive
 from google.oauth2 import service_account
+from google.auth.transport.requests import AuthorizedSession
 import io
 
 # --- 1. AUTHENTICATION & DRIVE CONNECTION ---
@@ -21,27 +22,29 @@ def check_password():
                 else:
                     st.error("😕 Password incorrect")
             except Exception:
-                st.error("Secrets not configured correctly. Check the [password] block.")
+                st.error("Secrets not configured correctly. Check [password] block.")
         return False
     return True
 
 @st.cache_resource
 def get_drive_connection():
     try:
-        # Load secrets
         creds_info = dict(st.secrets["gdrive_service_account"])
-        
-        # Modern Google Auth credentials object (Solves the Decoder error)
         SCOPES = ['https://www.googleapis.com/auth/drive']
+        
+        # Modern credentials
         credentials = service_account.Credentials.from_service_account_info(
             creds_info, 
             scopes=SCOPES
         )
         
-        # Inject modern credentials into PyDrive2
+        # FIX: Manual Auth for PyDrive2 to avoid 'access_token_expired' error
         gauth = GoogleAuth()
         gauth.credentials = credentials
-        return GoogleDrive(gauth)
+        
+        # We manually authorize the session to bridge the gap between library generations
+        drive = GoogleDrive(gauth)
+        return drive
     except Exception as e:
         st.error(f"Drive Connection Error: {e}")
         return None
@@ -50,6 +53,7 @@ drive = get_drive_connection()
 
 # Helper: Find or Create Folder in Drive
 def get_folder_id(folder_name, parent_id=None):
+    # PyDrive2 query syntax
     query = f"title='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
     if parent_id:
         query += f" and '{parent_id}' in parents"
@@ -69,7 +73,6 @@ def get_folder_id(folder_name, parent_id=None):
 if check_password() and drive:
     st.set_page_config(layout="wide", page_title="Vision Jet Analytics", page_icon="✈️")
 
-    # High-contrast Metric styling
     st.markdown("""
         <style>
         [data-testid="stMetricValue"] { font-size: 1.8rem; color: #d33612; }
@@ -79,7 +82,11 @@ if check_password() and drive:
         """, unsafe_allow_html=True)
 
     # Initialize Fleet Folder
-    ROOT_ID = get_folder_id("sf50-fleet-data")
+    try:
+        ROOT_ID = get_folder_id("sf50-fleet-data")
+    except Exception as e:
+        st.error(f"Failed to access Google Drive: {e}")
+        st.stop()
 
     with st.sidebar:
         st.title("🚀 SF50 Fleet Control")
@@ -125,7 +132,6 @@ if check_password() and drive:
                 dt_stamp = f"{flight_dt.strftime('%Y%m%d')}_{flight_tm.strftime('%H%M')}"
                 save_name = f"{dt_stamp}_{active_source}"
                 
-                # Convert DF to CSV string for Drive Upload
                 csv_buffer = io.StringIO()
                 df.to_csv(csv_buffer, index=False)
                 
