@@ -3,10 +3,11 @@ import pandas as pd
 import clean_flight_data as cleaner
 import graph_flight_interactive as visualizer
 from datetime import datetime
-from st_filesystems import GoogleDriveFileSystem
+import gcsfs
 
-# --- 1. AUTHENTICATION & DRIVE CONNECTION ---
+# --- 1. AUTHENTICATION & CLOUD CONNECTION ---
 def check_password():
+    """Simple password protection layer."""
     if "password_correct" not in st.session_state:
         st.title("🔒 SF50 Data Access")
         st.text_input("Enter Dashboard Password", type="password", key="password_input")
@@ -19,24 +20,24 @@ def check_password():
         return False
     return True
 
-# Initialize Google Drive Connection using TOML Secrets
+# Initialize GCS/Google Drive Connection
 try:
-    # This looks for the [gdrive_service_account] block in your secrets
-    fs = GoogleDriveFileSystem(token=st.secrets["gdrive_service_account"])
-    ROOT_FOLDER = "SF50_Fleet_Data"
+    # Uses the [gdrive_service_account] block from your Secrets
+    fs = gcsfs.GCSFileSystem(token=st.secrets["gdrive_service_account"])
+    # Note: Use a bucket name or folder path compatible with GCS (lowercase/hyphens)
+    ROOT_FOLDER = "sf50-fleet-data" 
     
-    # Ensure the root folder exists in Drive
     if not fs.exists(ROOT_FOLDER):
         fs.mkdir(ROOT_FOLDER)
 except Exception as e:
-    st.error(f"Google Drive Connection Error: {e}")
+    st.error(f"Cloud Connection Error: {e}")
     st.stop()
 
 # --- 2. MAIN APP ---
 if check_password():
     st.set_page_config(layout="wide", page_title="Vision Jet Analytics", page_icon="✈️")
 
-    # Custom Styling
+    # Custom CSS for UI branding
     st.markdown("""
         <style>
         [data-testid="stMetricValue"] { font-size: 1.8rem; color: #d33612; }
@@ -49,10 +50,9 @@ if check_password():
     with st.sidebar:
         st.title("🚀 SF50 Fleet Control")
         
-        # Aircraft Profile Selection
         st.subheader("📁 Aircraft Profile")
         try:
-            # List existing folders (tail numbers) in Google Drive
+            # List existing tail number folders
             existing_profiles = [f.split('/')[-1] for f in fs.ls(ROOT_FOLDER) if fs.isdir(f)]
         except:
             existing_profiles = []
@@ -64,12 +64,11 @@ if check_password():
         else:
             tail_number = selected_profile
 
-        # Profile Metadata
         aircraft_sn = st.text_input("Aircraft S/N", placeholder="e.g. 1234")
         
         st.divider()
         
-        # Load History from Google Drive for this specific Tail Number
+        # Load History for the selected Tail Number
         if tail_number:
             profile_path = f"{ROOT_FOLDER}/{tail_number}"
             if not fs.exists(profile_path):
@@ -88,27 +87,25 @@ if check_password():
         flight_tm = st.time_input("Flight Time", value=datetime.now().time())
         flight_notes = st.text_area("Flight Notes")
 
-    # --- 3. DATA LOGIC: SAVE & LOAD ---
+    # --- 3. DATA LOGIC ---
     df = None
     active_source = ""
 
     # Priority 1: New Upload
     if uploaded_file:
         try:
-            with st.spinner("Processing & Uploading to Cloud..."):
+            with st.spinner("Uploading to Cloud..."):
                 uploaded_file.seek(0)
                 df = cleaner.clean_data(uploaded_file)
                 active_source = uploaded_file.name
                 
-                # Format Date/Time for Filename
+                # Naming Convention: YYYYMMDD_HHMM_OriginalName.csv
                 dt_stamp = f"{flight_dt.strftime('%Y%m%d')}_{flight_tm.strftime('%H%M')}"
-                save_name = f"{dt_stamp}_{active_source}"
-                save_path = f"{ROOT_FOLDER}/{tail_number}/{save_name}"
+                save_path = f"{ROOT_FOLDER}/{tail_number}/{dt_stamp}_{active_source}"
                 
-                # Save to Google Drive
                 with fs.open(save_path, "w") as f:
                     df.to_csv(f, index=False)
-                st.sidebar.success(f"Log Saved to {tail_number} Profile")
+                st.sidebar.success(f"Log Saved to {tail_number}")
         except Exception as e:
             st.error(f"Upload Error: {e}")
 
@@ -125,9 +122,8 @@ if check_password():
     # --- 4. DASHBOARD DISPLAY ---
     if df is not None:
         st.title(f"✈️ {tail_number} | Flight Analysis")
-        st.caption(f"Log Source: {active_source} | S/N: {aircraft_sn}")
+        st.caption(f"S/N: {aircraft_sn} | Source: {active_source}")
 
-        # Metrics Row
         m1, m2, m3, m4 = st.columns(4)
         with m1: st.metric("Max GS", f"{df['Groundspeed'].max():.0f} kts")
         with m2: st.metric("Peak ITT", f"{df['ITT (F)'].max():.0f} °F")
@@ -156,5 +152,4 @@ if check_password():
             st.download_button("💾 Download Local Copy", csv_data, f"CLEANED_{active_source}", "text/csv")
     else:
         st.title("SF50 Fleet Analytics")
-        st.subheader("Dashboard Ready")
-        st.info("Select an aircraft profile or upload a new G3000 log in the sidebar to begin.")
+        st.info("Select an aircraft profile or upload a new G3000 log to begin.")
