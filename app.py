@@ -19,34 +19,31 @@ def check_password():
                 else:
                     st.error("😕 Password incorrect")
             except Exception:
-                st.error("Secrets not configured correctly.")
+                st.error("Secrets not configured correctly. Check [password] block.")
         return False
     return True
 
-# --- INITIALIZE GOOGLE DRIVE CONNECTION ---
+# Initialize Connection
 try:
     creds_dict = dict(st.secrets["gdrive_service_account"])
-    SCOPES = ['https://www.googleapis.com/auth/drive']
+    # We explicitly define the Drive scope here
+    SCOPES = ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/cloud-platform']
     credentials = service_account.Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
     
-    # We add 'token' and 'project' but the secret sauce is the prefix in ROOT_FOLDER
-    fs = gcsfs.GCSFileSystem(
-        project=creds_dict.get('project_id'), 
-        token=credentials,
-        cache_timeout=0 
-    )
+    # Initialize the filesystem
+    fs = gcsfs.GCSFileSystem(project=creds_dict.get('project_id'), token=credentials)
     
-    # FIX: Use the 'drive://' prefix to force the library to look at Google Drive folders
-    # If this still fails, ensure the folder 'sf50-fleet-data' is shared with your service account email as EDITOR
+    # IMPORTANT: ROOT_FOLDER must exist and be shared with the Service Account email
     ROOT_FOLDER = "sf50-fleet-data" 
     
-    # Simple check to verify access
+    # Test if we can see the folder
     if not fs.exists(ROOT_FOLDER):
+        # If the robot is an Editor, it can create the folder if it's missing
         fs.mkdir(ROOT_FOLDER)
         
 except Exception as e:
-    st.error(f"Cloud Connection Error (Forbidden): {e}")
-    st.info("Check: Did you share the 'sf50-fleet-data' folder with the Service Account email as an EDITOR?")
+    st.error(f"Cloud Connection Error: {e}")
+    st.info("Verification: Is the folder 'sf50-fleet-data' shared with the Service Account email as EDITOR?")
     st.stop()
 
 # --- 2. MAIN APP ---
@@ -108,7 +105,8 @@ if check_password():
                 df = cleaner.clean_data(uploaded_file)
                 active_source = uploaded_file.name
                 dt_stamp = f"{flight_dt.strftime('%Y%m%d')}_{flight_tm.strftime('%H%M')}"
-                save_path = f"{ROOT_FOLDER}/{tail_number}/{dt_stamp}_{active_source}"
+                save_name = f"{dt_stamp}_{active_source}"
+                save_path = f"{ROOT_FOLDER}/{tail_number}/{save_name}"
                 
                 with fs.open(save_path, "w") as f:
                     df.to_csv(f, index=False)
