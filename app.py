@@ -1,4 +1,28 @@
 import streamlit as st
+
+st.title("Secret Diagnostic Tool")
+
+if "gdrive_service_account" in st.secrets:
+    creds = st.secrets["gdrive_service_account"]
+    
+    st.write("### 🛡️ Credential Check")
+    st.write(f"**Project ID:** `{creds.get('project_id')}`")
+    st.write(f"**Client Email:** `{creds.get('client_email')}`")
+    
+    # Check the Private Key formatting
+    pk = creds.get("private_key", "")
+    st.write("### 🔑 Private Key Analysis")
+    st.write(f"**Key starts with correctly?** `{pk.startswith('-----BEGIN PRIVATE KEY-----')}`")
+    st.write(f"**Key ends with correctly?** `{pk.strip().endswith('-----END PRIVATE KEY-----')}`")
+    st.write(f"**Number of lines detected:** `{len(pk.splitlines())}`")
+    
+    if len(pk.splitlines()) == 1:
+        st.warning("⚠️ Warning: Your key is being read as a single long line. This often causes the DECODER error.")
+    else:
+        st.success(f"✅ Key has {len(pk.splitlines())} lines. This looks good for the decoder.")
+else:
+    st.error("❌ 'gdrive_service_account' not found in Secrets.")
+import streamlit as st
 import pandas as pd
 import clean_flight_data as cleaner
 import graph_flight_interactive as visualizer
