@@ -22,22 +22,27 @@ def check_password():
 
 # Initialize GCS/Google Drive Connection
 try:
-    # Uses the [gdrive_service_account] block from your Secrets
-    fs = gcsfs.GCSFileSystem(token=st.secrets["gdrive_service_account"])
-    # Note: Use a bucket name or folder path compatible with GCS (lowercase/hyphens)
+    # FIX: Explicitly wrap the secret in dict() so gcsfs understands the format
+    service_account_info = dict(st.secrets["gdrive_service_account"])
+    
+    # Initialize the filesystem
+    fs = gcsfs.GCSFileSystem(token=service_account_info)
+    
+    # Bucket/Folder Name (use lowercase and hyphens for GCS compatibility)
     ROOT_FOLDER = "sf50-fleet-data" 
     
     if not fs.exists(ROOT_FOLDER):
         fs.mkdir(ROOT_FOLDER)
 except Exception as e:
     st.error(f"Cloud Connection Error: {e}")
+    st.info("Ensure your Secrets are formatted as [gdrive_service_account] in TOML.")
     st.stop()
 
 # --- 2. MAIN APP ---
 if check_password():
     st.set_page_config(layout="wide", page_title="Vision Jet Analytics", page_icon="✈️")
 
-    # Custom CSS for UI branding
+    # Custom CSS for UI branding and Metric contrast
     st.markdown("""
         <style>
         [data-testid="stMetricValue"] { font-size: 1.8rem; color: #d33612; }
@@ -64,6 +69,7 @@ if check_password():
         else:
             tail_number = selected_profile
 
+        # Profile Metadata: Aircraft S/N
         aircraft_sn = st.text_input("Aircraft S/N", placeholder="e.g. 1234")
         
         st.divider()
@@ -91,7 +97,7 @@ if check_password():
     df = None
     active_source = ""
 
-    # Priority 1: New Upload
+    # New Upload Logic
     if uploaded_file:
         try:
             with st.spinner("Uploading to Cloud..."):
@@ -101,7 +107,8 @@ if check_password():
                 
                 # Naming Convention: YYYYMMDD_HHMM_OriginalName.csv
                 dt_stamp = f"{flight_dt.strftime('%Y%m%d')}_{flight_tm.strftime('%H%M')}"
-                save_path = f"{ROOT_FOLDER}/{tail_number}/{dt_stamp}_{active_source}"
+                save_name = f"{dt_stamp}_{active_source}"
+                save_path = f"{ROOT_FOLDER}/{tail_number}/{save_name}"
                 
                 with fs.open(save_path, "w") as f:
                     df.to_csv(f, index=False)
@@ -109,7 +116,7 @@ if check_password():
         except Exception as e:
             st.error(f"Upload Error: {e}")
 
-    # Priority 2: History Selection
+    # History Selection Logic
     elif selected_history != "-- Load Previous --":
         try:
             load_path = f"{ROOT_FOLDER}/{tail_number}/{selected_history}"
@@ -124,6 +131,7 @@ if check_password():
         st.title(f"✈️ {tail_number} | Flight Analysis")
         st.caption(f"S/N: {aircraft_sn} | Source: {active_source}")
 
+        # Metrics Row
         m1, m2, m3, m4 = st.columns(4)
         with m1: st.metric("Max GS", f"{df['Groundspeed'].max():.0f} kts")
         with m2: st.metric("Peak ITT", f"{df['ITT (F)'].max():.0f} °F")
@@ -132,13 +140,15 @@ if check_password():
 
         st.divider()
 
-        tab_graph, tab_data = st.tabs(["📊 Interactive Analytics", "📋 Raw Telemetry"])
+        tab_graph, tab_data = st.tabs(["📊 Engine & Systems Graph", "📋 Raw Telemetry"])
 
         with tab_graph:
+            # Visualizer already updated for high contrast in previous step
             fig = visualizer.generate_dashboard(df)
             st.plotly_chart(fig, use_container_width=True)
 
         with tab_data:
+            st.subheader("Processed Log Data")
             st.dataframe(df, use_container_width=True)
             
             # Export with Metadata Header
