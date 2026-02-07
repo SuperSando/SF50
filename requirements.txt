@@ -1,5 +1,7 @@
 pandas
 plotly
 streamlit
-st-filesystems
 gcsfs
+fsspec
+google-auth
+google-api-python-client
