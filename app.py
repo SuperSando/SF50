@@ -15,6 +15,7 @@ def check_password():
         st.text_input("Enter Dashboard Password", type="password", key="password_input")
         if st.button("Log In"):
             try:
+                # Accessing secrets
                 if st.session_state["password_input"] == st.secrets["password"]["password"]:
                     st.session_state["password_correct"] = True
                     st.rerun()
@@ -25,13 +26,18 @@ def check_password():
         return False
     return True
 
-# Initialize Google Drive Connection (Bypasses Google Cloud Billing)
 @st.cache_resource
 def get_drive_connection():
     try:
         scope = ['https://www.googleapis.com/auth/drive']
+        # Load the secret as a dictionary
         creds_dict = dict(st.secrets["gdrive_service_account"])
-        # Standard Service Account Auth for Drive
+        
+        # FIX: The Decoder Error Fix
+        # We replace the literal string "\n" with actual newline characters
+        if "private_key" in creds_dict:
+            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+            
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         gauth = GoogleAuth()
         gauth.credentials = creds
@@ -52,7 +58,6 @@ def get_folder_id(folder_name, parent_id=None):
     if file_list:
         return file_list[0]['id']
     else:
-        # Create it if it doesn't exist
         meta = {'title': folder_name, 'mimeType': 'application/vnd.google-apps.folder'}
         if parent_id:
             meta['parents'] = [{'id': parent_id}]
@@ -64,13 +69,20 @@ def get_folder_id(folder_name, parent_id=None):
 if check_password() and drive:
     st.set_page_config(layout="wide", page_title="Vision Jet Analytics", page_icon="✈️")
 
-    # Ensure Root Folder Exists
+    # High-contrast CSS
+    st.markdown("""
+        <style>
+        [data-testid="stMetricValue"] { font-size: 1.8rem; color: #d33612; }
+        .stTabs [data-baseweb="tab-list"] { gap: 24px; }
+        .stTabs [data-baseweb="tab"] { height: 50px; font-weight: bold; }
+        </style>
+        """, unsafe_allow_html=True)
+
     ROOT_ID = get_folder_id("sf50-fleet-data")
 
     with st.sidebar:
         st.title("🚀 SF50 Fleet Control")
         
-        # Aircraft Profile Logic
         st.subheader("📁 Aircraft Profile")
         profiles = drive.ListFile({'q': f"'{ROOT_ID}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"}).GetList()
         profile_names = [p['title'] for p in profiles]
@@ -85,7 +97,6 @@ if check_password() and drive:
         aircraft_sn = st.text_input("Aircraft S/N", placeholder="e.g. 1234")
         st.divider()
 
-        # Load History Logic
         if tail_number:
             tail_id = get_folder_id(tail_number, ROOT_ID)
             history_files = drive.ListFile({'q': f"'{tail_id}' in parents and trashed=false"}).GetList()
@@ -105,20 +116,23 @@ if check_password() and drive:
     active_source = ""
 
     if uploaded_file:
-        with st.spinner("Processing & Syncing to Drive..."):
-            df = cleaner.clean_data(uploaded_file)
-            active_source = uploaded_file.name
-            dt_stamp = f"{flight_dt.strftime('%Y%m%d')}_{flight_tm.strftime('%H%M')}"
-            save_name = f"{dt_stamp}_{active_source}"
-            
-            # Save CSV to Drive
-            csv_buffer = io.StringIO()
-            df.to_csv(csv_buffer, index=False)
-            
-            f_drive = drive.CreateFile({'title': save_name, 'parents': [{'id': tail_id}]})
-            f_drive.SetContentString(csv_buffer.getvalue())
-            f_drive.Upload()
-            st.sidebar.success(f"Saved to Drive: {save_name}")
+        try:
+            with st.spinner("Processing & Syncing to Drive..."):
+                uploaded_file.seek(0)
+                df = cleaner.clean_data(uploaded_file)
+                active_source = uploaded_file.name
+                dt_stamp = f"{flight_dt.strftime('%Y%m%d')}_{flight_tm.strftime('%H%M')}"
+                save_name = f"{dt_stamp}_{active_source}"
+                
+                csv_buffer = io.StringIO()
+                df.to_csv(csv_buffer, index=False)
+                
+                f_drive = drive.CreateFile({'title': save_name, 'parents': [{'id': tail_id}]})
+                f_drive.SetContentString(csv_buffer.getvalue())
+                f_drive.Upload()
+                st.sidebar.success(f"Saved: {save_name}")
+        except Exception as e:
+            st.error(f"Upload Error: {e}")
 
     elif selected_history != "-- Load Previous --":
         file_id = history_map[selected_history]
