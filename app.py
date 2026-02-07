@@ -1,28 +1,4 @@
 import streamlit as st
-
-st.title("Secret Diagnostic Tool")
-
-if "gdrive_service_account" in st.secrets:
-    creds = st.secrets["gdrive_service_account"]
-    
-    st.write("### 🛡️ Credential Check")
-    st.write(f"**Project ID:** `{creds.get('project_id')}`")
-    st.write(f"**Client Email:** `{creds.get('client_email')}`")
-    
-    # Check the Private Key formatting
-    pk = creds.get("private_key", "")
-    st.write("### 🔑 Private Key Analysis")
-    st.write(f"**Key starts with correctly?** `{pk.startswith('-----BEGIN PRIVATE KEY-----')}`")
-    st.write(f"**Key ends with correctly?** `{pk.strip().endswith('-----END PRIVATE KEY-----')}`")
-    st.write(f"**Number of lines detected:** `{len(pk.splitlines())}`")
-    
-    if len(pk.splitlines()) == 1:
-        st.warning("⚠️ Warning: Your key is being read as a single long line. This often causes the DECODER error.")
-    else:
-        st.success(f"✅ Key has {len(pk.splitlines())} lines. This looks good for the decoder.")
-else:
-    st.error("❌ 'gdrive_service_account' not found in Secrets.")
-import streamlit as st
 import pandas as pd
 import clean_flight_data as cleaner
 import graph_flight_interactive as visualizer
@@ -52,29 +28,22 @@ def check_password():
 @st.cache_resource
 def get_drive_connection():
     try:
-        creds_dict = dict(st.secrets["gdrive_service_account"])
+        # Load secrets
+        creds_info = dict(st.secrets["gdrive_service_account"])
         
-        # FINAL RSA KEY CLEANER: Handles Python 3.13 decoder requirements
-        if "private_key" in creds_dict:
-            pk = creds_dict["private_key"]
-            # 1. Replace escaped newlines if they exist
-            pk = pk.replace("\\n", "\n")
-            # 2. Ensure the string is clean of accidental wrapping quotes or spaces
-            pk = pk.strip().strip("'").strip('"')
-            creds_dict["private_key"] = pk
-            
+        # Modern Google Auth credentials object (Solves the Decoder error)
         SCOPES = ['https://www.googleapis.com/auth/drive']
-        creds = service_account.Credentials.from_service_account_info(
-            creds_dict, 
+        credentials = service_account.Credentials.from_service_account_info(
+            creds_info, 
             scopes=SCOPES
         )
         
+        # Inject modern credentials into PyDrive2
         gauth = GoogleAuth()
-        gauth.credentials = creds
+        gauth.credentials = credentials
         return GoogleDrive(gauth)
     except Exception as e:
         st.error(f"Drive Connection Error: {e}")
-        st.info("Check: Is the private_key pasted correctly between triple quotes in Secrets?")
         return None
 
 drive = get_drive_connection()
@@ -100,6 +69,7 @@ def get_folder_id(folder_name, parent_id=None):
 if check_password() and drive:
     st.set_page_config(layout="wide", page_title="Vision Jet Analytics", page_icon="✈️")
 
+    # High-contrast Metric styling
     st.markdown("""
         <style>
         [data-testid="stMetricValue"] { font-size: 1.8rem; color: #d33612; }
@@ -108,12 +78,13 @@ if check_password() and drive:
         </style>
         """, unsafe_allow_html=True)
 
+    # Initialize Fleet Folder
     ROOT_ID = get_folder_id("sf50-fleet-data")
 
     with st.sidebar:
         st.title("🚀 SF50 Fleet Control")
-        st.subheader("📁 Aircraft Profile")
         
+        st.subheader("📁 Aircraft Profile")
         profiles = drive.ListFile({'q': f"'{ROOT_ID}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"}).GetList()
         profile_names = [p['title'] for p in profiles]
         
@@ -147,20 +118,21 @@ if check_password() and drive:
 
     if uploaded_file:
         try:
-            with st.spinner("Processing & Syncing to Drive..."):
+            with st.spinner("Syncing to Cloud Drive..."):
                 uploaded_file.seek(0)
                 df = cleaner.clean_data(uploaded_file)
                 active_source = uploaded_file.name
                 dt_stamp = f"{flight_dt.strftime('%Y%m%d')}_{flight_tm.strftime('%H%M')}"
                 save_name = f"{dt_stamp}_{active_source}"
                 
+                # Convert DF to CSV string for Drive Upload
                 csv_buffer = io.StringIO()
                 df.to_csv(csv_buffer, index=False)
                 
                 f_drive = drive.CreateFile({'title': save_name, 'parents': [{'id': tail_id}]})
                 f_drive.SetContentString(csv_buffer.getvalue())
                 f_drive.Upload()
-                st.sidebar.success(f"Saved: {save_name}")
+                st.sidebar.success(f"Log Saved: {save_name}")
         except Exception as e:
             st.error(f"Upload Error: {e}")
 
@@ -185,8 +157,14 @@ if check_password() and drive:
         with m3: st.metric("Max N1", f"{df['N1 %'].max():.1f}%")
         with m4: st.metric("Duration", f"{(len(df) / 60):.1f} min")
 
-        fig = visualizer.generate_dashboard(df)
-        st.plotly_chart(fig, use_container_width=True)
+        st.divider()
+        
+        tab1, tab2 = st.tabs(["📊 Performance Graph", "📋 Data Table"])
+        with tab1:
+            fig = visualizer.generate_dashboard(df)
+            st.plotly_chart(fig, use_container_width=True)
+        with tab2:
+            st.dataframe(df, use_container_width=True)
     else:
         st.title("SF50 Fleet Analytics")
-        st.info("Ready for analysis. Select a profile or upload a file in the sidebar.")
+        st.info("Log in and select a profile to begin.")
