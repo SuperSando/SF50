@@ -38,36 +38,53 @@ def get_drive_service():
 
 service = get_drive_service()
 
-# --- DRIVE HELPERS ---
+# --- DRIVE HELPERS (UPDATED FOR QUOTA FIX) ---
 def get_folder_id(name, parent_id=None):
+    # Added supportsAllDrives and includeItemsFromAllDrives
     query = f"name = '{name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
     if parent_id: query += f" and '{parent_id}' in parents"
-    results = service.files().list(q=query, fields="files(id)").execute()
+    
+    results = service.files().list(
+        q=query, 
+        fields="files(id)",
+        supportsAllDrives=True, 
+        includeItemsFromAllDrives=True
+    ).execute()
+    
     files = results.get('files', [])
     if files: return files[0]['id']
     
-    # Create folder if missing
+    # Create folder if missing (must support all drives)
     meta = {'name': name, 'mimeType': 'application/vnd.google-apps.folder'}
     if parent_id: meta['parents'] = [parent_id]
-    folder = service.files().create(body=meta, fields='id').execute()
+    
+    folder = service.files().create(
+        body=meta, 
+        fields='id',
+        supportsAllDrives=True
+    ).execute()
     return folder.get('id')
 
 def list_files_in_folder(folder_id):
     query = f"'{folder_id}' in parents and trashed = false"
-    results = service.files().list(q=query, fields="files(id, name)").execute()
+    results = service.files().list(
+        q=query, 
+        fields="files(id, name)",
+        supportsAllDrives=True, 
+        includeItemsFromAllDrives=True
+    ).execute()
     return results.get('files', [])
 
 # --- 2. MAIN APP ---
 if check_password() and service:
     st.set_page_config(layout="wide", page_title="Vision Jet Analytics", page_icon="✈️")
 
-    # Initial Setup: Get or Create Fleet Folder
+    # Initial Setup
     ROOT_ID = get_folder_id("sf50-fleet-data")
 
     with st.sidebar:
         st.title("🚀 SF50 Fleet Control")
         
-        # Aircraft Selection
         st.subheader("📁 Aircraft Profile")
         profiles = list_files_in_folder(ROOT_ID)
         profile_names = [p['name'] for p in profiles]
@@ -78,7 +95,6 @@ if check_password() and service:
         
         st.divider()
 
-        # History Selection
         if tail_number:
             tail_id = get_folder_id(tail_number, ROOT_ID)
             history_list = list_files_in_folder(tail_id)
@@ -106,11 +122,19 @@ if check_password() and service:
             csv_str = df.to_csv(index=False)
             fh = io.BytesIO(csv_str.encode())
             media = MediaIoBaseUpload(fh, mimetype='text/csv')
-            service.files().create(body={'name': save_name, 'parents': [tail_id]}, media_body=media).execute()
+            
+            # CRITICAL FIX: Add supportsAllDrives=True to the upload
+            service.files().create(
+                body={'name': save_name, 'parents': [tail_id]}, 
+                media_body=media,
+                supportsAllDrives=True 
+            ).execute()
+            
             st.sidebar.success(f"Saved: {save_name}")
 
     elif selected_history != "-- Load Previous --":
         file_id = history_map[selected_history]
+        # Download needs supportsAllDrives too
         request = service.files().get_media(fileId=file_id)
         fh = io.BytesIO()
         downloader = MediaIoBaseDownload(fh, request)
@@ -133,4 +157,4 @@ if check_password() and service:
 
         st.plotly_chart(visualizer.generate_dashboard(df), use_container_width=True)
     else:
-        st.info("Log in and select an aircraft profile to view performance telemetry.")
+        st.info("Log in and select an aircraft profile to view telemetry.")
