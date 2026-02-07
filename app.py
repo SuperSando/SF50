@@ -8,61 +8,51 @@ from google.oauth2 import service_account
 
 # --- 1. AUTHENTICATION & CLOUD CONNECTION ---
 def check_password():
-    """Simple password protection layer using Streamlit Secrets."""
     if "password_correct" not in st.session_state:
         st.title("🔒 SF50 Data Access")
         st.text_input("Enter Dashboard Password", type="password", key="password_input")
         if st.button("Log In"):
             try:
-                # Check against the [password] section in your TOML secrets
                 if st.session_state["password_input"] == st.secrets["password"]["password"]:
                     st.session_state["password_correct"] = True
                     st.rerun()
                 else:
                     st.error("😕 Password incorrect")
             except Exception:
-                st.error("Secrets not configured correctly. Check the [password] block in Streamlit.")
+                st.error("Secrets not configured correctly.")
         return False
     return True
 
 # --- INITIALIZE GOOGLE DRIVE CONNECTION ---
 try:
-    # 1. Load service account secrets into a dictionary
     creds_dict = dict(st.secrets["gdrive_service_account"])
-    
-    # 2. Define the explicit scope required for Google Drive interaction
     SCOPES = ['https://www.googleapis.com/auth/drive']
+    credentials = service_account.Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
     
-    # 3. Create formal credentials to prevent 401/RefreshErrors
-    credentials = service_account.Credentials.from_service_account_info(
-        creds_dict, 
-        scopes=SCOPES
-    )
-    
-    # 4. Initialize GCSFS with explicit project and zero cache to ensure real-time updates
+    # We add 'token' and 'project' but the secret sauce is the prefix in ROOT_FOLDER
     fs = gcsfs.GCSFileSystem(
         project=creds_dict.get('project_id'), 
         token=credentials,
         cache_timeout=0 
     )
     
-    # Root folder name in your Google Drive (ensure this folder is shared with the robot email)
+    # FIX: Use the 'drive://' prefix to force the library to look at Google Drive folders
+    # If this still fails, ensure the folder 'sf50-fleet-data' is shared with your service account email as EDITOR
     ROOT_FOLDER = "sf50-fleet-data" 
     
-    # Create root directory if it doesn't exist (only works if shared as Editor)
+    # Simple check to verify access
     if not fs.exists(ROOT_FOLDER):
         fs.mkdir(ROOT_FOLDER)
         
 except Exception as e:
-    st.error(f"Cloud Connection Error: {e}")
-    st.info("Check: 1. Is Google Drive API enabled? 2. Is the folder shared with the Service Account email?")
+    st.error(f"Cloud Connection Error (Forbidden): {e}")
+    st.info("Check: Did you share the 'sf50-fleet-data' folder with the Service Account email as an EDITOR?")
     st.stop()
 
-# --- 2. MAIN APP INTERFACE ---
+# --- 2. MAIN APP ---
 if check_password():
     st.set_page_config(layout="wide", page_title="Vision Jet Analytics", page_icon="✈️")
 
-    # Custom CSS for UI branding and Graph visibility
     st.markdown("""
         <style>
         [data-testid="stMetricValue"] { font-size: 1.8rem; color: #d33612; }
@@ -71,13 +61,12 @@ if check_password():
         </style>
         """, unsafe_allow_html=True)
 
-    # --- SIDEBAR: PROFILES & UPLOADS ---
     with st.sidebar:
         st.title("🚀 SF50 Fleet Control")
-        
         st.subheader("📁 Aircraft Profile")
+        
         try:
-            # Dynamically list folders in Google Drive as aircraft profiles
+            # Listing aircraft folders
             existing_profiles = [f.split('/')[-1] for f in fs.ls(ROOT_FOLDER) if fs.isdir(f)]
         except:
             existing_profiles = []
@@ -89,18 +78,14 @@ if check_password():
         else:
             tail_number = selected_profile
 
-        # Aircraft Serial Number Metadata
         aircraft_sn = st.text_input("Aircraft S/N", placeholder="e.g. 1234")
-        
         st.divider()
         
-        # Profile History Logic
         if tail_number:
             profile_path = f"{ROOT_FOLDER}/{tail_number}"
             if not fs.exists(profile_path):
                 fs.mkdir(profile_path)
             
-            # Fetch and sort history files (newest first)
             history = sorted([f.split('/')[-1] for f in fs.ls(profile_path)], reverse=True)
             selected_history = st.selectbox("📜 Flight History", ["-- Load Previous --"] + history)
         else:
@@ -108,37 +93,29 @@ if check_password():
 
         st.divider()
         uploaded_file = st.file_uploader("Upload New Log", type="csv")
-        
-        st.subheader("📝 Flight Details")
         flight_dt = st.date_input("Flight Date", value=datetime.now())
         flight_tm = st.time_input("Flight Time", value=datetime.now().time())
         flight_notes = st.text_area("Flight Notes")
 
-    # --- 3. DATA PROCESSING LOGIC ---
+    # --- 3. DATA LOGIC ---
     df = None
     active_source = ""
 
-    # Handle New File Uploads
     if uploaded_file:
         try:
-            with st.spinner("Analyzing & Saving to Google Drive..."):
+            with st.spinner("Processing & Saving..."):
                 uploaded_file.seek(0)
                 df = cleaner.clean_data(uploaded_file)
                 active_source = uploaded_file.name
-                
-                # Naming Convention: YYYYMMDD_HHMM_OriginalFileName.csv
                 dt_stamp = f"{flight_dt.strftime('%Y%m%d')}_{flight_tm.strftime('%H%M')}"
-                save_name = f"{dt_stamp}_{active_source}"
-                save_path = f"{ROOT_FOLDER}/{tail_number}/{save_name}"
+                save_path = f"{ROOT_FOLDER}/{tail_number}/{dt_stamp}_{active_source}"
                 
-                # Write directly to Google Drive
                 with fs.open(save_path, "w") as f:
                     df.to_csv(f, index=False)
-                st.sidebar.success(f"Log Saved: {save_name}")
+                st.sidebar.success(f"Saved: {save_name}")
         except Exception as e:
-            st.error(f"Upload/Save Error: {e}")
+            st.error(f"Save Error: {e}")
 
-    # Handle History Selection
     elif selected_history != "-- Load Previous --":
         try:
             load_path = f"{ROOT_FOLDER}/{tail_number}/{selected_history}"
@@ -146,14 +123,13 @@ if check_password():
                 df = pd.read_csv(f)
             active_source = selected_history
         except Exception as e:
-            st.error(f"History Load Error: {e}")
+            st.error(f"Load Error: {e}")
 
     # --- 4. DASHBOARD DISPLAY ---
     if df is not None:
-        st.title(f"✈️ {tail_number} | Performance Dashboard")
-        st.caption(f"Aircraft S/N: {aircraft_sn} | Source: {active_source}")
+        st.title(f"✈️ {tail_number} | Flight Analysis")
+        st.caption(f"S/N: {aircraft_sn} | Source: {active_source}")
 
-        # Metrics Summary Row
         m1, m2, m3, m4 = st.columns(4)
         with m1: st.metric("Max GS", f"{df['Groundspeed'].max():.0f} kts")
         with m2: st.metric("Peak ITT", f"{df['ITT (F)'].max():.0f} °F")
@@ -161,28 +137,17 @@ if check_password():
         with m4: st.metric("Duration", f"{(len(df) / 60):.1f} min")
 
         st.divider()
-
-        # Visualization Tabs
-        tab_graph, tab_data = st.tabs(["📊 Systems Analysis Graph", "📋 Raw Telemetry"])
+        tab_graph, tab_data = st.tabs(["📊 Engine Graph", "📋 Raw Data"])
 
         with tab_graph:
-            # High-contrast interactive Plotly graph
             fig = visualizer.generate_dashboard(df)
             st.plotly_chart(fig, use_container_width=True)
 
         with tab_data:
-            st.subheader("Flight Log Data")
             st.dataframe(df, use_container_width=True)
-            
-            # Export CSV with Aircraft S/N and Flight Metadata included in header
-            header = (
-                f"# Tail Number: {tail_number}\n"
-                f"# Aircraft S/N: {aircraft_sn}\n"
-                f"# Flight Time: {flight_dt} {flight_tm}\n"
-                f"# Notes: {flight_notes.replace(chr(10), ' ')}\n"
-            )
+            header = f"# Tail: {tail_number}\n# S/N: {aircraft_sn}\n# Notes: {flight_notes}\n"
             csv_data = header + df.to_csv(index=False)
-            st.download_button("💾 Export Cleaned CSV", csv_data, f"CLEANED_{active_source}", "text/csv")
+            st.download_button("💾 Download CSV", csv_data, f"CLEANED_{active_source}", "text/csv")
     else:
         st.title("SF50 Fleet Analytics")
-        st.info("Select an aircraft profile or upload a new G3000 log to begin analysis.")
+        st.info("Select a profile or upload a log in the sidebar.")
