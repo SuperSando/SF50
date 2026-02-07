@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import clean_flight_data as cleaner
 import graph_flight_interactive as visualizer
+from datetime import datetime
 
 # --- 1. AUTHENTICATION LOGIC ---
 def check_password():
@@ -21,7 +22,6 @@ def check_password():
 if check_password():
     st.set_page_config(layout="wide", page_title="Vision Jet Analytics", page_icon="✈️")
 
-    # Custom CSS
     st.markdown("""
         <style>
         [data-testid="stMetricValue"] { font-size: 1.8rem; color: #d33612; }
@@ -36,11 +36,15 @@ if check_password():
         st.divider()
         uploaded_file = st.file_uploader("Upload Raw Engine CSV", type="csv")
         
-        # NEW: FLIGHT METADATA SECTION
         st.divider()
         st.subheader("📝 Flight Metadata")
         tail_number = st.text_input("Tail Number", placeholder="e.g. N123SF")
-        pilot_name = st.text_input("Pilot Name")
+        # UPDATED: Changed from Pilot Name to Aircraft S/N
+        aircraft_sn = st.text_input("Aircraft S/N", placeholder="e.g. 1234")
+        # NEW: Added Date/Time input
+        flight_dt = st.date_input("Flight Date", value=datetime.now())
+        flight_tm = st.time_input("Flight Time", value=datetime.now().time())
+        
         flight_notes = st.text_area("Flight Notes", placeholder="Describe flight phase or issues...")
         
         st.divider()
@@ -54,9 +58,7 @@ if check_password():
                 df = cleaner.clean_data(uploaded_file)
             
             st.title("✈️ SF50 Vision Jet Performance")
-            if tail_number:
-                st.subheader(f"Aircraft: {tail_number}")
-
+            
             # --- METRICS ROW ---
             m1, m2, m3, m4 = st.columns(4)
             with m1:
@@ -81,12 +83,13 @@ if check_password():
                 st.subheader("Processed Log Data")
                 st.dataframe(df, use_container_width=True)
                 
-                # UPDATED: Download logic to include Metadata at the top
+                # UPDATED: Download logic to include S/N and Date/Time
                 metadata_header = (
                     f"# Tail Number: {tail_number}\n"
-                    f"# Pilot: {pilot_name}\n"
+                    f"# Aircraft S/N: {aircraft_sn}\n"
+                    f"# Flight Timestamp: {flight_dt} {flight_tm}\n"
                     f"# Notes: {flight_notes.replace(chr(10), ' ')}\n"
-                    f"# Export Date: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}\n"
+                    f"# Export Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
                 )
                 csv_body = df.to_csv(index=False)
                 final_csv = metadata_header + csv_body
