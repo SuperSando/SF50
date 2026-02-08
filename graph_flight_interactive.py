@@ -2,7 +2,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# --- CONFIGURATION (UNCHANGED) ---
+# --- CONFIGURATION ---
 GRAPH_MAPPINGS = {
     "Groundspeed": "Groundspeed", "Cabin Diff PSI": "Cabin Diff PSI", 
     "Bld Px PSI": "Bld Px PSI", "Bleed On": "Bleed On", "N1 %": "N1 %", 
@@ -24,6 +24,14 @@ UNITS = {
     "ECS PRI DUCT T2 (F)": "°F", "ECS CKPT T (F)": "°F", 
     "O2 BTL Px PSI": "psi", "O2 VLV Open": "1=OPEN", "EIPS TMP (F)": "°F", 
     "EIPS PRS PSI": "psi"
+}
+
+# --- RESTORED: LIMIT LINES CONFIG ---
+LIMIT_LINES = {
+    "ITT (F)": [(1610, "red", "Max T/O 10sec"), (1583, "orange", "Max T/O 5mins"), (1536, "green", "MCT")], 
+    "N1 %": [(105.7, "red", "Tran. 30sec"), (104.7, "green", "MCT")], 
+    "N2 %": [(101, "red", "Tran. 30sec"), (100, "green", "MCT")], 
+    "Oil Px PSI": [(120, "green", "max")]
 }
 
 X_AXIS_COL = "Time"
@@ -48,6 +56,7 @@ def generate_dashboard(df):
             
             trace_visible = True if title in DEFAULT_VISIBLE else 'legendonly'
 
+            # 1. Main Data Trace
             fig.add_trace(
                 go.Scatter(
                     x=df[X_AXIS_COL], 
@@ -57,25 +66,44 @@ def generate_dashboard(df):
                     visible=trace_visible, 
                     legendgroup=title,
                     line=dict(color=line_color, width=2),
-                    # Ensuring hover info is standard for unified box
                     hovertemplate=f"<b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
                 ),
                 secondary_y=use_secondary, 
             )
+
+            # 2. RESTORED: Add Limit Lines for the trace
+            if title in LIMIT_LINES:
+                for val, color, label in LIMIT_LINES[title]:
+                    fig.add_trace(
+                        go.Scatter(
+                            x=[df[X_AXIS_COL].min(), df[X_AXIS_COL].max()], 
+                            y=[val, val],
+                            mode='lines+text', 
+                            text=[label, ""], 
+                            textposition="top right",
+                            line=dict(color=color, width=1, dash='dash'),
+                            name=label, 
+                            legendgroup=title, 
+                            showlegend=False, 
+                            visible=trace_visible, # Follows the main trace visibility
+                            hoverinfo='skip'
+                        ),
+                        secondary_y=use_secondary 
+                    )
+            
             color_idx += 1
 
+    # --- THE HUD & UI SETTINGS ---
     fig.update_layout(
         height=800, 
         template="plotly_white", 
-        # --- THE HUD SETTINGS ---
-        hovermode="x unified",
-        hoverdistance=-1, # Look for data across the whole X axis
-        spikedistance=-1, # Ensure spikes show up regardless of cursor distance
+        hovermode="x unified",     # Single box for all data
+        hoverdistance=-1,          # Capture data from anywhere on X
         hoverlabel=dict(
             bgcolor="rgba(255, 255, 255, 0.95)",
             font_size=13,
             font_family="Arial Black",
-            align="left"
+            namelength=-1 
         ),
         plot_bgcolor="#f8f9fa", 
         paper_bgcolor="white",    
@@ -83,11 +111,11 @@ def generate_dashboard(df):
         margin=dict(l=20, r=20, t=40, b=20)
     )
 
-    # --- SPIKE & AXIS SETTINGS ---
+    # --- CROSSHAIR & SPIKE LOGIC ---
     fig.update_xaxes(
         showspikes=True,
         spikemode='across',
-        spikesnap='cursor', # Vertical line stays with mouse
+        spikesnap='cursor',        # Vertical line follows mouse EXACTLY
         spikethickness=1,
         spikedash='solid',
         spikecolor='#666666',
@@ -97,8 +125,8 @@ def generate_dashboard(df):
 
     fig.update_yaxes(
         showspikes=True,
-        spikemode='toaxis', 
-        spikesnap='data',   # Horizontal line snaps to data point to indicate value
+        spikemode='toaxis',        # Horizontal line to the axis
+        spikesnap='data',          # Snaps to data point for axis reading
         spikethickness=1,
         spikedash='dash',
         spikecolor='#999999',
