@@ -57,7 +57,7 @@ def generate_dashboard(df):
                     visible=trace_visible, 
                     legendgroup=title,
                     line=dict(color=line_color, width=2),
-                    # The name is included so it shows up in the Unified box
+                    # We use the name in the hovertemplate so it appears clearly
                     hovertemplate=f"<b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
                 ),
                 secondary_y=use_secondary, 
@@ -68,12 +68,12 @@ def generate_dashboard(df):
         height=800, 
         template="plotly_white", 
         # --- THE HUD SETTINGS ---
-        hovermode="x unified", 
+        hovermode="x",           # Uses x-comparison but doesn't snap the BOX vertically
+        hoverdistance=-1,        # -1 forces it to always look for data regardless of distance
         hoverlabel=dict(
-            bgcolor="rgba(255, 255, 255, 0.9)", # Translucent white
+            bgcolor="rgba(255, 255, 255, 0.9)",
             font_size=13,
-            font_family="Arial Black",
-            align="left"
+            font_family="Arial Black"
         ),
         plot_bgcolor="#f8f9fa", 
         paper_bgcolor="white",    
@@ -81,11 +81,11 @@ def generate_dashboard(df):
         margin=dict(l=20, r=20, t=40, b=20)
     )
 
-    # --- AXIS & SPIKE CONFIG ---
+    # --- THE CROSSHAIR SETTINGS ---
     fig.update_xaxes(
         showspikes=True,
         spikemode='across',
-        spikesnap='cursor', # Vertical line follows mouse exactly
+        spikesnap='cursor',      # Vertical line follows mouse EXACTLY
         spikethickness=1,
         spikedash='dash',
         spikecolor='#999999',
@@ -95,8 +95,8 @@ def generate_dashboard(df):
 
     fig.update_yaxes(
         showspikes=True,
-        spikemode='toaxis', # Horizontal line goes to the y-axis
-        spikesnap='data',   # Snaps to the data points for that axis
+        spikemode='toaxis',      # Horizontal line goes from trace to axis
+        spikesnap='data',        # Horizontal line snaps to data point
         spikethickness=1,
         spikedash='dash',
         spikecolor='#999999',
