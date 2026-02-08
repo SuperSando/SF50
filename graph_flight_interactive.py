@@ -55,7 +55,6 @@ def generate_dashboard(df):
             
             trace_visible = True if title in DEFAULT_VISIBLE else 'legendonly'
 
-            # 1. Main Trace
             fig.add_trace(
                 go.Scatter(
                     x=df[X_AXIS_COL], 
@@ -65,7 +64,6 @@ def generate_dashboard(df):
                     visible=trace_visible, 
                     legendgroup=title,
                     line=dict(color=line_color, width=2),
-                    # THE FIX: This identifies the trace INSIDE the unified box
                     hovertemplate=f"<b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
                 ),
                 secondary_y=use_secondary, 
@@ -89,12 +87,12 @@ def generate_dashboard(df):
     fig.update_layout(
         height=800, 
         template="plotly_white", 
-        hovermode="x unified", # Returns the strike-line and single box
+        hovermode="x unified",
         hoverlabel=dict(
             bgcolor="rgba(255, 255, 255, 0.9)",
             font_size=13,
             font_family="Arial Black",
-            namelength=-1 # Ensures names aren't cut off
+            namelength=-1 
         ),
         plot_bgcolor="#f8f9fa", 
         paper_bgcolor="white",    
@@ -102,13 +100,23 @@ def generate_dashboard(df):
         margin=dict(l=20, r=20, t=40, b=20)
     )
 
-    fig.update_xaxes(
-        rangeslider_visible=False,
-        showline=True, linewidth=1, linecolor='black', mirror=True, gridcolor='white'
+    # --- SPIKELINE CONFIGURATION ---
+    # This adds the horizontal and vertical "crosshair" effect
+    common_axis_settings = dict(
+        showline=True, 
+        linewidth=1, 
+        linecolor='black', 
+        mirror=True, 
+        gridcolor='white',
+        showspikes=True,             # Turns spikelines on
+        spikemode='across',          # Extends line to the axis
+        spikesnap='cursor',          # Snaps to mouse
+        spikethickness=1,
+        spikedash='dash',            # Makes it a dashed line
+        spikecolor='#999999'         # Subtle grey so it doesn't distract from data
     )
 
-    fig.update_yaxes(
-        showline=True, linewidth=1, linecolor='black', mirror=True, gridcolor='white'
-    )
+    fig.update_xaxes(rangeslider_visible=False, **common_axis_settings)
+    fig.update_yaxes(**common_axis_settings)
 
     return fig
