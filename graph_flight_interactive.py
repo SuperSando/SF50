@@ -42,7 +42,6 @@ def generate_dashboard(df):
     
     fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-    # Standard High-Contrast Colors
     colors = ['#636EFA', '#EF553B', '#00CC96', '#AB63FA', '#FFA15A', '#19D3F3', '#FF6692', '#B6E880', '#FF97FF', '#FECB52']
     color_idx = 0
 
@@ -56,22 +55,26 @@ def generate_dashboard(df):
             
             trace_visible = True if title in DEFAULT_VISIBLE else 'legendonly'
 
-            # Add the Data Line
+            # DATA TRACE WITH INDIVIDUAL LABELS
             fig.add_trace(
                 go.Scatter(
                     x=df[X_AXIS_COL], 
                     y=df[col_name], 
-                    name=f"<b>{title}</b>", # Bold Legend Names
+                    name=title, 
                     mode='lines', 
                     visible=trace_visible, 
                     legendgroup=title,
-                    line=dict(color=line_color, width=2.5 if title in DEFAULT_VISIBLE else 1.5),
-                    hovertemplate=f" %{{y:.1f}} {unit}<extra></extra>"
+                    line=dict(color=line_color, width=2),
+                    # Label included inside the floating box
+                    hovertemplate=(
+                        f"<b>{title}</b><br>" +
+                        f"Value: %{{y:.1f}} {unit}<br>" +
+                        f"Time: %{{x}}<extra></extra>"
+                    )
                 ),
                 secondary_y=use_secondary, 
             )
 
-            # Add Limit Lines
             if title in LIMIT_LINES:
                 for val, color, label in LIMIT_LINES[title]:
                     fig.add_trace(
@@ -87,29 +90,16 @@ def generate_dashboard(df):
             
             color_idx += 1
 
-    # DASHBOARD STYLING
     fig.update_layout(
         height=800, 
         template="plotly_white", 
-        hovermode="x unified", # THIS IS THE KEY: Shows all active data in one box
-        hoverlabel=dict(
-            bgcolor="rgba(255, 255, 255, 0.9)",
-            font_size=14,
-            font_family="Arial Black"
-        ),
+        hovermode="closest", # Reverted from 'unified' for cleaner individual labels
         plot_bgcolor="#f8f9fa", 
         paper_bgcolor="white",    
-        legend=dict(
-            title="<b>✈️ SELECT TELEMETRY</b>", 
-            y=0.99, x=1.02,
-            bordercolor="Black",
-            borderwidth=1,
-            font=dict(size=12)
-        ),
+        legend=dict(title="<b>Click to Toggle:</b>", y=0.99, x=1.05),
         margin=dict(l=20, r=20, t=40, b=20)
     )
 
-    # Clean up Axes
     fig.update_xaxes(
         rangeslider_visible=False,
         showline=True, linewidth=1, linecolor='black', mirror=True, gridcolor='white'
