@@ -32,9 +32,13 @@ def get_backend_connection():
 
 repo = get_backend_connection()
 
-# Initialize a key for the uploader if it doesn't exist
+# Initialize session state for the uploader and the active data
 if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0
+if "active_df" not in st.session_state:
+    st.session_state.active_df = None
+if "active_source" not in st.session_state:
+    st.session_state.active_source = ""
 
 # --- 2. MAIN APP ---
 if check_password() and repo:
@@ -51,6 +55,14 @@ if check_password() and repo:
 
         selected_profile = st.selectbox("Select Aircraft", ["+ Create New Profile"] + sorted(profile_names))
         
+        # Reset active data if we switch aircraft
+        if "last_profile" not in st.session_state:
+            st.session_state.last_profile = selected_profile
+        if st.session_state.last_profile != selected_profile:
+            st.session_state.active_df = None
+            st.session_state.active_source = ""
+            st.session_state.last_profile = selected_profile
+
         # --- REGISTRATION MODE ---
         if selected_profile == "+ Create New Profile":
             st.subheader("🆕 Register New Aircraft")
@@ -87,6 +99,13 @@ if check_password() and repo:
                 history_files = repo.get_contents(f"data/{tail_number}")
                 history_map = {f.name: f for f in history_files if f.name.endswith(".csv")}
                 selected_history = st.selectbox("📜 Flight History", ["-- Load Previous --"] + sorted(history_map.keys(), reverse=True))
+                
+                # If user selects from history, it overrides any temporary "active_df"
+                if selected_history != "-- Load Previous --":
+                    full_file_path = f"data/{tail_number}/{selected_history}"
+                    file_data = repo.get_contents(full_file_path)
+                    st.session_state.active_df = pd.read_csv(io.StringIO(file_data.decoded_content.decode('utf-8')))
+                    st.session_state.active_source = selected_history
             except:
                 selected_history = "-- Load Previous --"
 
@@ -97,12 +116,12 @@ if check_password() and repo:
                     if st.button("🗑️ Delete Log", type="primary", disabled=not confirm_delete):
                         file_to_delete = history_map[selected_history]
                         repo.delete_file(file_to_delete.path, f"Removed {selected_history}", file_to_delete.sha)
+                        st.session_state.active_df = None
+                        st.session_state.active_source = ""
                         st.rerun()
 
             st.divider()
             st.subheader("📤 Upload Data")
-            
-            # --- THE FIX: DYNAMIC KEY CLEARS THE BOX ---
             uploaded_file = st.file_uploader(
                 "Drop CSV here", 
                 type="csv", 
@@ -111,39 +130,35 @@ if check_password() and repo:
             upload_btn = st.button("Upload", use_container_width=True, type="primary")
 
     # --- 3. DATA LOGIC ---
-    df = None
-    active_source = ""
-
     if uploaded_file and upload_btn:
-        with st.spinner("Uploading..."):
+        with st.spinner("Uploading & Opening..."):
             try:
-                df = cleaner.clean_data(uploaded_file)
+                processed_df = cleaner.clean_data(uploaded_file)
                 save_name = uploaded_file.name
                 file_path = f"data/{tail_number}/{save_name}"
                 
                 try:
                     repo.get_contents(file_path)
-                    st.error("This file already exists in this profile.")
+                    st.error("This file already exists.")
                 except:
-                    repo.create_file(file_path, f"Add: {save_name}", df.to_csv(index=False))
+                    # Upload to GitHub
+                    repo.create_file(file_path, f"Add: {save_name}", processed_df.to_csv(index=False))
                     
-                    # --- THE FIX: INCREMENT KEY BEFORE RERUN ---
+                    # Update session state so it displays immediately
+                    st.session_state.active_df = processed_df
+                    st.session_state.active_source = save_name
+                    
+                    # Clear uploader for next time
                     st.session_state.uploader_key += 1
-                    st.success("File uploaded successfully!")
+                    st.success("File uploaded and opened!")
                     st.rerun()
             except Exception as e:
                 st.error(f"Processing error: {e}")
 
-    elif selected_history != "-- Load Previous --":
-        try:
-            full_file_path = f"data/{tail_number}/{selected_history}"
-            file_data = repo.get_contents(full_file_path)
-            df = pd.read_csv(io.StringIO(file_data.decoded_content.decode('utf-8')))
-            active_source = selected_history
-        except Exception:
-            st.error("Failed to load history.")
-
     # --- 4. DASHBOARD ---
+    df = st.session_state.active_df
+    active_source = st.session_state.active_source
+
     if df is not None:
         st.title(f"✈️ {tail_number} Analysis")
         st.caption(f"S/N: {aircraft_sn} | Source: {active_source}")
