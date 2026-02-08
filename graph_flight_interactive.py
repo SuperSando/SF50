@@ -65,7 +65,6 @@ def generate_dashboard(df):
                 secondary_y=use_secondary, 
             )
 
-            # --- LIMIT LINES RESTORED ---
             if title in LIMIT_LINES:
                 for val, color, label in LIMIT_LINES[title]:
                     fig.add_trace(
@@ -84,13 +83,12 @@ def generate_dashboard(df):
     fig.update_layout(
         height=800, 
         template="plotly_white", 
-        hovermode="x unified", # Keeps everything in ONE box
+        hovermode="x unified",
         hoverdistance=-1, 
         hoverlabel=dict(
             bgcolor="rgba(255, 255, 255, 0.95)",
-            font_size=12,
+            font_size=14, # Slightly larger for better readability
             font_family="Arial Black"
-            # yanchor removed - it was causing the crash
         ),
         plot_bgcolor="#f8f9fa", 
         paper_bgcolor="white",    
@@ -98,22 +96,23 @@ def generate_dashboard(df):
         margin=dict(l=20, r=20, t=40, b=20)
     )
 
-    # Vertical strike line follows cursor exactly
+    # --- SPIKE LOGIC UPDATED ---
+    # Vertical line is now dashed ('dash')
     fig.update_xaxes(
         showspikes=True,
         spikemode='across',
         spikesnap='cursor', 
         spikethickness=1.5,
-        spikedash='solid',
+        spikedash='dash', # FIXED: Back to dashed
         spikecolor='#444444',
         rangeslider_visible=False,
         showline=True, linewidth=1, linecolor='black', mirror=True, gridcolor='white'
     )
 
-    # Horizontal lines snap from data points to the axes
+    # Horizontal lines updated to show for all traces
     fig.update_yaxes(
         showspikes=True,
-        spikemode='toaxis', 
+        spikemode='across', # CHANGED: Now shows across for all active axes
         spikesnap='data',
         spikethickness=1,
         spikedash='dash',
