@@ -26,7 +26,6 @@ UNITS = {
     "EIPS PRS PSI": "psi"
 }
 
-# --- RESTORED: LIMIT LINES CONFIG ---
 LIMIT_LINES = {
     "ITT (F)": [(1610, "red", "Max T/O 10sec"), (1583, "orange", "Max T/O 5mins"), (1536, "green", "MCT")], 
     "N1 %": [(105.7, "red", "Tran. 30sec"), (104.7, "green", "MCT")], 
@@ -56,54 +55,45 @@ def generate_dashboard(df):
             
             trace_visible = True if title in DEFAULT_VISIBLE else 'legendonly'
 
-            # 1. Main Data Trace
+            # 1. Main Trace
             fig.add_trace(
                 go.Scatter(
-                    x=df[X_AXIS_COL], 
-                    y=df[col_name], 
-                    name=title, 
-                    mode='lines', 
-                    visible=trace_visible, 
-                    legendgroup=title,
+                    x=df[X_AXIS_COL], y=df[col_name], name=title, mode='lines', 
+                    visible=trace_visible, legendgroup=title,
                     line=dict(color=line_color, width=2),
+                    # Format hover text for comparison mode
                     hovertemplate=f"<b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
                 ),
                 secondary_y=use_secondary, 
             )
 
-            # 2. RESTORED: Add Limit Lines for the trace
+            # 2. Limit Lines
             if title in LIMIT_LINES:
                 for val, color, label in LIMIT_LINES[title]:
                     fig.add_trace(
                         go.Scatter(
-                            x=[df[X_AXIS_COL].min(), df[X_AXIS_COL].max()], 
-                            y=[val, val],
-                            mode='lines+text', 
-                            text=[label, ""], 
-                            textposition="top right",
+                            x=[df[X_AXIS_COL].min(), df[X_AXIS_COL].max()], y=[val, val],
+                            mode='lines+text', text=[label, ""], textposition="top right",
                             line=dict(color=color, width=1, dash='dash'),
-                            name=label, 
-                            legendgroup=title, 
-                            showlegend=False, 
-                            visible=trace_visible, # Follows the main trace visibility
-                            hoverinfo='skip'
+                            name=label, legendgroup=title, showlegend=False, 
+                            visible=trace_visible, hoverinfo='skip'
                         ),
                         secondary_y=use_secondary 
                     )
             
             color_idx += 1
 
-    # --- THE HUD & UI SETTINGS ---
     fig.update_layout(
         height=800, 
         template="plotly_white", 
-        hovermode="x unified",     # Single box for all data
-        hoverdistance=-1,          # Capture data from anywhere on X
+        # --- THE HUD SETTINGS ---
+        # "x" mode follows the cursor vertically, but compares data across the X axis
+        hovermode="x", 
+        hoverdistance=-1, # Ensure it catches all traces regardless of distance
         hoverlabel=dict(
             bgcolor="rgba(255, 255, 255, 0.95)",
             font_size=13,
-            font_family="Arial Black",
-            namelength=-1 
+            font_family="Arial Black"
         ),
         plot_bgcolor="#f8f9fa", 
         paper_bgcolor="white",    
@@ -115,7 +105,7 @@ def generate_dashboard(df):
     fig.update_xaxes(
         showspikes=True,
         spikemode='across',
-        spikesnap='cursor',        # Vertical line follows mouse EXACTLY
+        spikesnap='cursor', # Vertical line follows mouse EXACTLY
         spikethickness=1,
         spikedash='solid',
         spikecolor='#666666',
@@ -125,8 +115,8 @@ def generate_dashboard(df):
 
     fig.update_yaxes(
         showspikes=True,
-        spikemode='toaxis',        # Horizontal line to the axis
-        spikesnap='data',          # Snaps to data point for axis reading
+        spikemode='toaxis', 
+        spikesnap='data',   # Horizontal line snaps to data point to show axis value
         spikethickness=1,
         spikedash='dash',
         spikecolor='#999999',
