@@ -26,13 +26,6 @@ UNITS = {
     "EIPS PRS PSI": "psi"
 }
 
-LIMIT_LINES = {
-    "ITT (F)": [(1610, "red", "Max T/O 10sec"), (1583, "orange", "Max T/O 5mins"), (1536, "green", "MCT")], 
-    "N1 %": [(105.7, "red", "Tran. 30sec"), (104.7, "green", "MCT")], 
-    "N2 %": [(101, "red", "Tran. 30sec"), (100, "green", "MCT")], 
-    "Oil Px PSI": [(120, "green", "max")]
-}
-
 X_AXIS_COL = "Time"
 BIG_NUMBER_THRESHOLD = 500
 
@@ -64,35 +57,23 @@ def generate_dashboard(df):
                     visible=trace_visible, 
                     legendgroup=title,
                     line=dict(color=line_color, width=2),
+                    # Unified hover template
                     hovertemplate=f"<b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
                 ),
                 secondary_y=use_secondary, 
             )
-
-            if title in LIMIT_LINES:
-                for val, color, label in LIMIT_LINES[title]:
-                    fig.add_trace(
-                        go.Scatter(
-                            x=[df[X_AXIS_COL].min(), df[X_AXIS_COL].max()], y=[val, val],
-                            mode='lines+text', text=[label, ""], textposition="top right",
-                            line=dict(color=color, width=1, dash='dash'),
-                            name=label, legendgroup=title, showlegend=False, 
-                            visible=trace_visible, hoverinfo='skip'
-                        ),
-                        secondary_y=use_secondary 
-                    )
-            
             color_idx += 1
 
     fig.update_layout(
         height=800, 
         template="plotly_white", 
-        hovermode="x unified", # Keeps the box with the cursor and shows all data
+        # --- THE FIX: Using "x" instead of "x unified" allows more pointer freedom ---
+        hovermode="x", 
+        hoverdistance=1000, # Ensures it picks up data even when mouse is far away
         hoverlabel=dict(
             bgcolor="rgba(255, 255, 255, 0.9)",
             font_size=13,
-            font_family="Arial Black",
-            namelength=-1 
+            font_family="Arial Black"
         ),
         plot_bgcolor="#f8f9fa", 
         paper_bgcolor="white",    
@@ -100,26 +81,26 @@ def generate_dashboard(df):
         margin=dict(l=20, r=20, t=40, b=20)
     )
 
-    # --- THE HYBRID SPIKE SETTINGS ---
+    # --- SPIKE LOGIC ---
     fig.update_xaxes(
-        rangeslider_visible=False,
-        showline=True, linewidth=1, linecolor='black', mirror=True, gridcolor='white',
         showspikes=True,
         spikemode='across',
-        spikesnap='cursor', # Vertical line follows mouse
+        spikesnap='cursor', # Vertical line follows mouse exactly
         spikethickness=1,
         spikedash='dash',
-        spikecolor='#999999'
+        spikecolor='#999999',
+        rangeslider_visible=False,
+        showline=True, linewidth=1, linecolor='black', mirror=True, gridcolor='white'
     )
 
     fig.update_yaxes(
-        showline=True, linewidth=1, linecolor='black', mirror=True, gridcolor='white',
         showspikes=True,
-        spikemode='toaxis', # Horizontal line goes to the axis
-        spikesnap='data',   # BUT it snaps to the actual points on the trace
+        spikemode='toaxis', # Horizontal line snaps to axis
+        spikesnap='data',   # Snaps to data points
         spikethickness=1,
         spikedash='dash',
-        spikecolor='#999999'
+        spikecolor='#999999',
+        showline=True, linewidth=1, linecolor='black', mirror=True, gridcolor='white'
     )
 
     return fig
