@@ -47,26 +47,46 @@ if check_password() and repo:
         except:
             profile_names = []
 
-        selected_profile = st.selectbox("Select Aircraft", ["New Profile..."] + sorted(profile_names))
+        selected_profile = st.selectbox("Select Aircraft", ["+ Create New Profile"] + sorted(profile_names))
         
-        if selected_profile == "New Profile...":
-            tail_number = st.text_input("Tail Number (New)", placeholder="N123SF").upper().strip()
+        if selected_profile == "+ Create New Profile":
+            new_tail = st.text_input("Tail Number", placeholder="N123SF").upper().strip()
+            new_sn = st.text_input("Aircraft S/N", placeholder="e.g. 1234")
+            if st.button("Register Aircraft", use_container_width=True):
+                if new_tail:
+                    try:
+                        # Create a folder by placing a hidden file inside it
+                        repo.create_file(f"data/{new_tail}/.profile", f"Initialize {new_tail}", f"S/N: {new_sn}")
+                        st.success(f"Profile {new_tail} Created!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error creating profile: {e}")
+                else:
+                    st.warning("Please enter a Tail Number.")
+            # Stop further UI rendering if we are in "Create" mode but haven't created yet
+            st.stop()
         else:
             tail_number = selected_profile
 
-        aircraft_sn = st.text_input("Aircraft S/N", placeholder="e.g. 1234")
+        # Metadata (Aircraft S/N)
+        # Attempt to read S/N from the .profile file if it exists
+        try:
+            sn_file = repo.get_contents(f"data/{tail_number}/.profile")
+            aircraft_sn = sn_file.decoded_content.decode('utf-8').replace("S/N: ", "")
+        except:
+            aircraft_sn = "Unknown"
+        
+        st.info(f"Tail: **{tail_number}** | S/N: **{aircraft_sn}**")
         st.divider()
 
         # History Selection
         history_map = {}
-        if tail_number:
-            try:
-                history_files = repo.get_contents(f"data/{tail_number}")
-                history_map = {f.name: f for f in history_files if f.name.endswith(".csv")}
-                selected_history = st.selectbox("📜 Flight History", ["-- Load Previous --"] + sorted(history_map.keys(), reverse=True))
-            except:
-                selected_history = "-- Load Previous --"
-        else:
+        try:
+            history_files = repo.get_contents(f"data/{tail_number}")
+            # Filter out the hidden .profile file
+            history_map = {f.name: f for f in history_files if f.name.endswith(".csv")}
+            selected_history = st.selectbox("📜 Flight History", ["-- Load Previous --"] + sorted(history_map.keys(), reverse=True))
+        except:
             selected_history = "-- Load Previous --"
 
         # Danger Zone
@@ -84,10 +104,7 @@ if check_password() and repo:
                         st.error("Delete Failed.")
 
         st.divider()
-        # Simplified Upload Section
         uploaded_file = st.file_uploader("Upload New Log", type="csv")
-        
-        # Manual upload trigger to prevent "sticky file" bugs
         upload_btn = st.button("Upload", use_container_width=True, type="primary")
 
     # --- 3. DATA LOGIC ---
@@ -98,11 +115,9 @@ if check_password() and repo:
         with st.spinner("Processing & Saving..."):
             try:
                 df = cleaner.clean_data(uploaded_file)
-                # Filename is now exactly what the user uploaded
                 save_name = uploaded_file.name
                 file_path = f"data/{tail_number}/{save_name}"
                 
-                # Check for existing file with the same name
                 try:
                     repo.get_contents(file_path)
                     st.error(f"Error: {save_name} already exists.")
@@ -125,7 +140,7 @@ if check_password() and repo:
     # --- 4. DASHBOARD ---
     if df is not None:
         st.title(f"✈️ {tail_number} Analysis")
-        st.caption(f"S/N: {aircraft_sn} | File: {active_source}")
+        st.caption(f"Aircraft S/N: {aircraft_sn} | File: {active_source}")
         
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Max GS", f"{df['Groundspeed'].max():.0f} kts")
@@ -135,4 +150,4 @@ if check_password() and repo:
         
         st.plotly_chart(visualizer.generate_dashboard(df), use_container_width=True)
     else:
-        st.info("Upload a log or select from history to begin.")
+        st.info(f"Dashboard for **{tail_number}** is empty. Please upload a G3000 log.")
