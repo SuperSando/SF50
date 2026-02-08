@@ -32,6 +32,10 @@ def get_backend_connection():
 
 repo = get_backend_connection()
 
+# Initialize a key for the uploader if it doesn't exist
+if "uploader_key" not in st.session_state:
+    st.session_state.uploader_key = 0
+
 # --- 2. MAIN APP ---
 if check_password() and repo:
     st.set_page_config(layout="wide", page_title="Vision Jet Analytics", page_icon="✈️")
@@ -39,7 +43,6 @@ if check_password() and repo:
     with st.sidebar:
         st.title("🚀 SF50 Fleet Control")
         
-        # Aircraft Selection logic
         try:
             contents = repo.get_contents("data")
             profile_names = [c.name for c in contents if c.type == "dir"]
@@ -51,31 +54,24 @@ if check_password() and repo:
         # --- REGISTRATION MODE ---
         if selected_profile == "+ Create New Profile":
             st.subheader("🆕 Register New Aircraft")
-            # We use keys to allow us to clear them later if needed
             new_tail = st.text_input("Tail Number", placeholder="N123SF", key="reg_tail").upper().strip()
             new_sn = st.text_input("Aircraft S/N", placeholder="e.g. 1234", key="reg_sn")
             
             if st.button("Register Aircraft", use_container_width=True, type="primary"):
                 if new_tail:
                     try:
-                        # Initialize folder with S/N metadata
                         repo.create_file(f"data/{new_tail}/.profile", f"Init {new_tail}", f"S/N: {new_sn}")
                         st.success(f"Profile {new_tail} Created!")
-                        # Clear inputs by forcing rerun with the new aircraft selected
                         st.rerun()
                     except Exception as e:
                         st.error(f"Error: {e}")
                 else:
                     st.warning("Tail Number is required.")
-            
-            # Hide the rest of the app until an aircraft is selected
-            st.info("Register an aircraft to enable data uploading.")
             st.stop()
 
-        # --- ACTIVE MODE (Aircraft Selected) ---
+        # --- ACTIVE MODE ---
         else:
             tail_number = selected_profile
-            # Fetch S/N from the cloud
             try:
                 sn_file = repo.get_contents(f"data/{tail_number}/.profile")
                 aircraft_sn = sn_file.decoded_content.decode('utf-8').replace("S/N: ", "")
@@ -104,10 +100,15 @@ if check_password() and repo:
                         st.rerun()
 
             st.divider()
-            # Upload section is now permanently visible for active profiles
             st.subheader("📤 Upload Data")
-            uploaded_file = st.file_uploader("Drop CSV here", type="csv")
-            upload_btn = st.button("Upload to Cloud", use_container_width=True)
+            
+            # --- THE FIX: DYNAMIC KEY CLEARS THE BOX ---
+            uploaded_file = st.file_uploader(
+                "Drop CSV here", 
+                type="csv", 
+                key=f"uploader_{st.session_state.uploader_key}"
+            )
+            upload_btn = st.button("Upload", use_container_width=True, type="primary")
 
     # --- 3. DATA LOGIC ---
     df = None
@@ -120,12 +121,14 @@ if check_password() and repo:
                 save_name = uploaded_file.name
                 file_path = f"data/{tail_number}/{save_name}"
                 
-                # Double check for duplicates
                 try:
                     repo.get_contents(file_path)
                     st.error("This file already exists in this profile.")
                 except:
                     repo.create_file(file_path, f"Add: {save_name}", df.to_csv(index=False))
+                    
+                    # --- THE FIX: INCREMENT KEY BEFORE RERUN ---
+                    st.session_state.uploader_key += 1
                     st.success("File uploaded successfully!")
                     st.rerun()
             except Exception as e:
@@ -153,4 +156,4 @@ if check_password() and repo:
         
         st.plotly_chart(visualizer.generate_dashboard(df), use_container_width=True)
     else:
-        st.info(f"Ready for **{tail_number}**. Upload a log or select from history.")
+        st.info(f"Dashboard for **{tail_number}** is empty.")
