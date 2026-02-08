@@ -51,7 +51,7 @@ def generate_dashboard(df):
         legend=dict(title="Click to Toggle:", y=0.99, x=1.05),
         xaxis=dict(
             showline=True, linewidth=1, linecolor='black', mirror=True,
-            gridcolor='white', rangeslider=dict(visible=True)
+            gridcolor='white', rangeslider=dict(visible=False)
         ),
         yaxis=dict(showline=True, linewidth=1, linecolor='black', mirror=True, gridcolor='white'),
         yaxis2=dict(showline=True, linewidth=1, linecolor='black', mirror=True, gridcolor='white')
