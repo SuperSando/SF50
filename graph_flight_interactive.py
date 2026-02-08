@@ -42,6 +42,7 @@ def generate_dashboard(df):
     
     fig = make_subplots(specs=[[{"secondary_y": True}]])
 
+    # Standard High-Contrast Colors
     colors = ['#636EFA', '#EF553B', '#00CC96', '#AB63FA', '#FFA15A', '#19D3F3', '#FF6692', '#B6E880', '#FF97FF', '#FECB52']
     color_idx = 0
 
@@ -53,36 +54,24 @@ def generate_dashboard(df):
             unit = UNITS.get(title, "") 
             line_color = colors[color_idx % len(colors)]
             
-            # THE FIX: Trace visibility vs Annotation visibility
             trace_visible = True if title in DEFAULT_VISIBLE else 'legendonly'
-            anno_visible = True if title in DEFAULT_VISIBLE else False
 
-            # 1. Main Data Trace
+            # Add the Data Line
             fig.add_trace(
                 go.Scatter(
-                    x=df[X_AXIS_COL], y=df[col_name], name=title, mode='lines', 
-                    visible=trace_visible, legendgroup=title,
-                    line=dict(color=line_color),
-                    hovertemplate=f"<b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
+                    x=df[X_AXIS_COL], 
+                    y=df[col_name], 
+                    name=f"<b>{title}</b>", # Bold Legend Names
+                    mode='lines', 
+                    visible=trace_visible, 
+                    legendgroup=title,
+                    line=dict(color=line_color, width=2.5 if title in DEFAULT_VISIBLE else 1.5),
+                    hovertemplate=f" %{{y:.1f}} {unit}<extra></extra>"
                 ),
                 secondary_y=use_secondary, 
             )
 
-            # 2. Add Label Annotation (Stacking in top-left)
-            if anno_visible:
-                fig.add_annotation(
-                    text=f"● {title}",
-                    xref="paper", yref="paper",
-                    x=0.01, y=0.98 - (len(fig.layout.annotations) * 0.04), 
-                    showarrow=False,
-                    font=dict(size=14, color=line_color, family="Arial Black"),
-                    bgcolor="rgba(255,255,255,0.7)",
-                    bordercolor=line_color,
-                    borderwidth=2,
-                    borderpad=4,
-                    visible=True 
-                )
-
+            # Add Limit Lines
             if title in LIMIT_LINES:
                 for val, color, label in LIMIT_LINES[title]:
                     fig.add_trace(
@@ -98,16 +87,29 @@ def generate_dashboard(df):
             
             color_idx += 1
 
+    # DASHBOARD STYLING
     fig.update_layout(
         height=800, 
         template="plotly_white", 
-        hovermode="x unified",
+        hovermode="x unified", # THIS IS THE KEY: Shows all active data in one box
+        hoverlabel=dict(
+            bgcolor="rgba(255, 255, 255, 0.9)",
+            font_size=14,
+            font_family="Arial Black"
+        ),
         plot_bgcolor="#f8f9fa", 
         paper_bgcolor="white",    
-        legend=dict(title="<b>Click to Toggle:</b>", y=0.99, x=1.05),
+        legend=dict(
+            title="<b>✈️ SELECT TELEMETRY</b>", 
+            y=0.99, x=1.02,
+            bordercolor="Black",
+            borderwidth=1,
+            font=dict(size=12)
+        ),
         margin=dict(l=20, r=20, t=40, b=20)
     )
 
+    # Clean up Axes
     fig.update_xaxes(
         rangeslider_visible=False,
         showline=True, linewidth=1, linecolor='black', mirror=True, gridcolor='white'
