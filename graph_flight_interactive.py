@@ -57,7 +57,7 @@ def generate_dashboard(df):
                     visible=trace_visible, 
                     legendgroup=title,
                     line=dict(color=line_color, width=2),
-                    # Unified hover template
+                    # The name is included so it shows up in the Unified box
                     hovertemplate=f"<b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
                 ),
                 secondary_y=use_secondary, 
@@ -67,13 +67,13 @@ def generate_dashboard(df):
     fig.update_layout(
         height=800, 
         template="plotly_white", 
-        # --- THE FIX: Using "x" instead of "x unified" allows more pointer freedom ---
-        hovermode="x", 
-        hoverdistance=1000, # Ensures it picks up data even when mouse is far away
+        # --- THE HUD SETTINGS ---
+        hovermode="x unified", 
         hoverlabel=dict(
-            bgcolor="rgba(255, 255, 255, 0.9)",
+            bgcolor="rgba(255, 255, 255, 0.9)", # Translucent white
             font_size=13,
-            font_family="Arial Black"
+            font_family="Arial Black",
+            align="left"
         ),
         plot_bgcolor="#f8f9fa", 
         paper_bgcolor="white",    
@@ -81,7 +81,7 @@ def generate_dashboard(df):
         margin=dict(l=20, r=20, t=40, b=20)
     )
 
-    # --- SPIKE LOGIC ---
+    # --- AXIS & SPIKE CONFIG ---
     fig.update_xaxes(
         showspikes=True,
         spikemode='across',
@@ -95,8 +95,8 @@ def generate_dashboard(df):
 
     fig.update_yaxes(
         showspikes=True,
-        spikemode='toaxis', # Horizontal line snaps to axis
-        spikesnap='data',   # Snaps to data points
+        spikemode='toaxis', # Horizontal line goes to the y-axis
+        spikesnap='data',   # Snaps to the data points for that axis
         spikethickness=1,
         spikedash='dash',
         spikecolor='#999999',
