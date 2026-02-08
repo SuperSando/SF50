@@ -58,7 +58,6 @@ if check_password() and repo:
         if tail_number:
             try:
                 history_files = repo.get_contents(f"data/{tail_number}")
-                # We store the full file object so we can get the 'sha' for deletion
                 history_map = {f.name: f for f in history_files if f.name.endswith(".csv")}
                 selected_history = st.selectbox("📜 Flight History", ["-- Load Previous --"] + sorted(history_map.keys(), reverse=True))
             except:
@@ -66,7 +65,7 @@ if check_password() and repo:
         else:
             selected_history = "-- Load Previous --"
 
-        # --- NEW: THE DANGER ZONE (DELETION) ---
+        # Danger Zone (Deletion)
         if selected_history != "-- Load Previous --":
             st.divider()
             with st.expander("⚠️ Danger Zone"):
@@ -81,7 +80,7 @@ if check_password() and repo:
                             sha=file_to_delete.sha
                         )
                         st.sidebar.success(f"Deleted {selected_history}")
-                        st.rerun() # Refresh to update the dropdown list
+                        st.rerun()
                     except Exception as e:
                         st.error(f"Delete Failed: {e}")
 
@@ -111,9 +110,15 @@ if check_password() and repo:
                 st.sidebar.success(f"✅ Pushed: {save_name}")
 
     elif selected_history != "-- Load Previous --":
-        file_content = history_map[selected_history]
-        df = pd.read_csv(io.StringIO(file_content.decoded_content.decode()))
-        active_source = selected_history
+        # THE FIX: We pull the fresh content using the path, ensuring it's not a 'none' encoding stub
+        try:
+            full_file_path = f"data/{tail_number}/{selected_history}"
+            file_data = repo.get_contents(full_file_path)
+            # Use .decoded_content.decode() to turn bytes into a string for pandas
+            df = pd.read_csv(io.StringIO(file_data.decoded_content.decode('utf-8')))
+            active_source = selected_history
+        except Exception as e:
+            st.error(f"Load Error: {e}")
 
     # --- 4. DASHBOARD ---
     if df is not None:
