@@ -106,6 +106,10 @@ if check_password() and repo:
                     file_data = repo.get_contents(full_file_path)
                     st.session_state.active_df = pd.read_csv(io.StringIO(file_data.decoded_content.decode('utf-8')))
                     st.session_state.active_source = selected_history
+                else:
+                    # NEW: Clear the screen if the user resets the dropdown
+                    st.session_state.active_df = None
+                    st.session_state.active_source = ""
             except:
                 selected_history = "-- Load Previous --"
 
