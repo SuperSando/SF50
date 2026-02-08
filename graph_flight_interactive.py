@@ -2,7 +2,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# --- CONFIGURATION ---
+# --- CONFIGURATION (UNCHANGED) ---
 GRAPH_MAPPINGS = {
     "Groundspeed": "Groundspeed", "Cabin Diff PSI": "Cabin Diff PSI", 
     "Bld Px PSI": "Bld Px PSI", "Bleed On": "Bleed On", "N1 %": "N1 %", 
@@ -96,22 +96,24 @@ def generate_dashboard(df):
         margin=dict(l=20, r=20, t=40, b=20)
     )
 
-    # --- VERTICAL SPIKE ONLY (DASHED) ---
+    # Vertical spike logic
     fig.update_xaxes(
-        showspikes=True,
-        spikemode='across',
-        spikesnap='cursor', 
-        spikethickness=2,
-        spikedash='dash',
-        spikecolor='#555555',
-        rangeslider_visible=False,
-        showline=True, linewidth=1, linecolor='black', mirror=True, gridcolor='white'
+        showspikes=True, spikemode='across', spikesnap='cursor', 
+        spikethickness=2, spikedash='dash', spikecolor='#555555',
+        rangeslider_visible=False, showline=True, linewidth=1, 
+        linecolor='black', mirror=True, gridcolor='white'
     )
 
-    # --- HORIZONTAL SPIKES REMOVED ---
+    # --- UPDATED DYNAMIC Y-GRID ---
     fig.update_yaxes(
-        showspikes=False, # Clean look as requested
-        showline=True, linewidth=1, linecolor='black', mirror=True, gridcolor='white'
+        showgrid=True,           # Enable the background lines
+        gridcolor='#eeeeee',     # Set to very faint grey
+        gridwidth=1,
+        showline=True, 
+        linewidth=1, 
+        linecolor='black', 
+        mirror=True,
+        zeroline=False           # Remove the heavy line at 0 for a cleaner look
     )
 
     return fig
