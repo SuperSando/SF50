@@ -4,7 +4,7 @@ import clean_flight_data as cleaner
 import graph_flight_interactive as visualizer
 from datetime import datetime
 import io
-from github import Github
+from github import Github # Backend only
 
 # --- 1. AUTHENTICATION ---
 def check_password():
@@ -21,17 +21,18 @@ def check_password():
     return True
 
 @st.cache_resource
-def get_github_repo():
+def get_backend_connection():
     try:
+        # Pulling strings from secrets
         token_str = st.secrets["github_token"]["github_token"]
         repo_path_str = st.secrets["repo_path"]["repo_path"]
         g = Github(token_str)
         return g.get_repo(repo_path_str)
-    except Exception as e:
-        st.error(f"GitHub Connection Error: {e}")
+    except Exception:
+        st.error("Connection Error: Cloud storage unavailable.")
         return None
 
-repo = get_github_repo()
+repo = get_backend_connection()
 
 # --- 2. MAIN APP ---
 if check_password() and repo:
@@ -65,60 +66,60 @@ if check_password() and repo:
         else:
             selected_history = "-- Load Previous --"
 
-        # Danger Zone (Deletion)
+        # Danger Zone
         if selected_history != "-- Load Previous --":
             st.divider()
             with st.expander("⚠️ Danger Zone"):
-                st.write(f"Delete **{selected_history}**?")
-                confirm_delete = st.checkbox("I am sure I want to delete this log.")
-                if st.button("🗑️ Permanently Delete Log", type="primary", disabled=not confirm_delete):
+                confirm_delete = st.checkbox("Confirm Deletion")
+                if st.button("🗑️ Delete Log", type="primary", disabled=not confirm_delete):
                     try:
                         file_to_delete = history_map[selected_history]
-                        repo.delete_file(
-                            path=file_to_delete.path,
-                            message=f"Deleted log: {selected_history}",
-                            sha=file_to_delete.sha
-                        )
-                        st.sidebar.success(f"Deleted {selected_history}")
+                        repo.delete_file(file_to_delete.path, f"Removed {selected_history}", file_to_delete.sha)
+                        st.sidebar.success("Log removed from cloud.")
                         st.rerun()
-                    except Exception as e:
-                        st.error(f"Delete Failed: {e}")
+                    except Exception:
+                        st.error("Delete Failed: Permission error.")
 
         st.divider()
+        # Upload Section
         uploaded_file = st.file_uploader("Upload New Log", type="csv")
         flight_dt = st.date_input("Flight Date", value=datetime.now())
         flight_tm = st.time_input("Flight Time", value=datetime.now().time())
+        
+        # --- BUTTON UPDATED TO "UPLOAD" ---
+        upload_btn = st.button("Upload", use_container_width=True, type="primary")
 
     # --- 3. DATA LOGIC ---
     df = None
     active_source = ""
 
-    if uploaded_file:
-        df = cleaner.clean_data(uploaded_file)
-        active_source = uploaded_file.name
-        dt_stamp = f"{flight_dt.strftime('%Y%m%d')}_{flight_tm.strftime('%H%M')}"
-        save_name = f"{dt_stamp}_{active_source}"
-        file_path = f"data/{tail_number}/{save_name}"
-        
-        try:
-            repo.get_contents(file_path)
-            st.error(f"⚠️ Duplicate Error: {save_name} already exists.")
-            df = None
-        except:
-            with st.spinner("Pushing to GitHub..."):
-                repo.create_file(file_path, f"Upload: {save_name}", df.to_csv(index=False))
-                st.sidebar.success(f"✅ Pushed: {save_name}")
+    if uploaded_file and upload_btn:
+        with st.spinner("Processing & Saving..."):
+            try:
+                df = cleaner.clean_data(uploaded_file)
+                dt_stamp = f"{flight_dt.strftime('%Y%m%d')}_{flight_tm.strftime('%H%M')}"
+                save_name = f"{dt_stamp}_{uploaded_file.name}"
+                file_path = f"data/{tail_number}/{save_name}"
+                
+                # Check for existing
+                try:
+                    repo.get_contents(file_path)
+                    st.error(f"Error: {save_name} already exists in the cloud.")
+                except:
+                    repo.create_file(file_path, f"Add: {save_name}", df.to_csv(index=False))
+                    st.sidebar.success(f"✅ Successfully Uploaded: {save_name}")
+                    st.rerun()
+            except Exception as e:
+                st.error(f"Error processing file: {e}")
 
     elif selected_history != "-- Load Previous --":
-        # THE FIX: We pull the fresh content using the path, ensuring it's not a 'none' encoding stub
         try:
             full_file_path = f"data/{tail_number}/{selected_history}"
             file_data = repo.get_contents(full_file_path)
-            # Use .decoded_content.decode() to turn bytes into a string for pandas
             df = pd.read_csv(io.StringIO(file_data.decoded_content.decode('utf-8')))
             active_source = selected_history
-        except Exception as e:
-            st.error(f"Load Error: {e}")
+        except Exception:
+            st.error("Error loading history from cloud.")
 
     # --- 4. DASHBOARD ---
     if df is not None:
@@ -130,4 +131,4 @@ if check_password() and repo:
         m4.metric("Duration", f"{(len(df) / 60):.1f} min")
         st.plotly_chart(visualizer.generate_dashboard(df), use_container_width=True)
     else:
-        st.info("Select a log or upload data to begin.")
+        st.info("Upload a log or select from history to begin.")
