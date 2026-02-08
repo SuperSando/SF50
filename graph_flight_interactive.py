@@ -57,7 +57,7 @@ def generate_dashboard(df):
                     visible=trace_visible, 
                     legendgroup=title,
                     line=dict(color=line_color, width=2),
-                    # We use the name in the hovertemplate so it appears clearly
+                    # Unified hover text
                     hovertemplate=f"<b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
                 ),
                 secondary_y=use_secondary, 
@@ -68,12 +68,13 @@ def generate_dashboard(df):
         height=800, 
         template="plotly_white", 
         # --- THE HUD SETTINGS ---
-        hovermode="x",           # Uses x-comparison but doesn't snap the BOX vertically
-        hoverdistance=-1,        # -1 forces it to always look for data regardless of distance
+        hovermode="x unified",     # Single box for all data
+        hoverdistance=-1,          # Capture data from anywhere on X
         hoverlabel=dict(
-            bgcolor="rgba(255, 255, 255, 0.9)",
+            bgcolor="rgba(255, 255, 255, 0.95)",
             font_size=13,
-            font_family="Arial Black"
+            font_family="Arial Black",
+            namelength=-1 
         ),
         plot_bgcolor="#f8f9fa", 
         paper_bgcolor="white",    
@@ -81,22 +82,22 @@ def generate_dashboard(df):
         margin=dict(l=20, r=20, t=40, b=20)
     )
 
-    # --- THE CROSSHAIR SETTINGS ---
+    # --- CROSSHAIR & SPIKE LOGIC ---
     fig.update_xaxes(
         showspikes=True,
         spikemode='across',
-        spikesnap='cursor',      # Vertical line follows mouse EXACTLY
+        spikesnap='cursor',        # Vertical strike line follows mouse EXACTLY
         spikethickness=1,
-        spikedash='dash',
-        spikecolor='#999999',
+        spikedash='solid',         # Solid line for better visibility
+        spikecolor='#666666',      # Darker grey
         rangeslider_visible=False,
         showline=True, linewidth=1, linecolor='black', mirror=True, gridcolor='white'
     )
 
     fig.update_yaxes(
         showspikes=True,
-        spikemode='toaxis',      # Horizontal line goes from trace to axis
-        spikesnap='data',        # Horizontal line snaps to data point
+        spikemode='toaxis',        # Horizontal line to the y-axis
+        spikesnap='data',          # Snaps to the trace data point
         spikethickness=1,
         spikedash='dash',
         spikecolor='#999999',
