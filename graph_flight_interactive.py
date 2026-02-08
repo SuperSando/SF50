@@ -55,7 +55,7 @@ def generate_dashboard(df):
             
             trace_visible = True if title in DEFAULT_VISIBLE else 'legendonly'
 
-            # DATA TRACE WITH INDIVIDUAL LABELS
+            # 1. Main Trace
             fig.add_trace(
                 go.Scatter(
                     x=df[X_AXIS_COL], 
@@ -65,12 +65,8 @@ def generate_dashboard(df):
                     visible=trace_visible, 
                     legendgroup=title,
                     line=dict(color=line_color, width=2),
-                    # Label included inside the floating box
-                    hovertemplate=(
-                        f"<b>{title}</b><br>" +
-                        f"Value: %{{y:.1f}} {unit}<br>" +
-                        f"Time: %{{x}}<extra></extra>"
-                    )
+                    # THE FIX: This identifies the trace INSIDE the unified box
+                    hovertemplate=f"<b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
                 ),
                 secondary_y=use_secondary, 
             )
@@ -93,7 +89,13 @@ def generate_dashboard(df):
     fig.update_layout(
         height=800, 
         template="plotly_white", 
-        hovermode="closest", # Reverted from 'unified' for cleaner individual labels
+        hovermode="x unified", # Returns the strike-line and single box
+        hoverlabel=dict(
+            bgcolor="rgba(255, 255, 255, 0.9)",
+            font_size=13,
+            font_family="Arial Black",
+            namelength=-1 # Ensures names aren't cut off
+        ),
         plot_bgcolor="#f8f9fa", 
         paper_bgcolor="white",    
         legend=dict(title="<b>Click to Toggle:</b>", y=0.99, x=1.05),
