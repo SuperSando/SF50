@@ -100,23 +100,34 @@ def generate_dashboard(df):
         margin=dict(l=20, r=20, t=40, b=20)
     )
 
-    # --- SPIKELINE CONFIGURATION ---
-    # This adds the horizontal and vertical "crosshair" effect
-    common_axis_settings = dict(
+    # --- UPDATED SPIKELINE CONFIGURATION ---
+    fig.update_xaxes(
+        rangeslider_visible=False,
         showline=True, 
         linewidth=1, 
         linecolor='black', 
         mirror=True, 
         gridcolor='white',
-        showspikes=True,             # Turns spikelines on
-        spikemode='across',          # Extends line to the axis
-        spikesnap='cursor',          # Snaps to mouse
+        showspikes=True,
+        spikemode='across', # Vertical line stays full height
+        spikesnap='cursor',
         spikethickness=1,
-        spikedash='dash',            # Makes it a dashed line
-        spikecolor='#999999'         # Subtle grey so it doesn't distract from data
+        spikedash='dash',
+        spikecolor='#999999'
     )
 
-    fig.update_xaxes(rangeslider_visible=False, **common_axis_settings)
-    fig.update_yaxes(**common_axis_settings)
+    fig.update_yaxes(
+        showline=True, 
+        linewidth=1, 
+        linecolor='black', 
+        mirror=True, 
+        gridcolor='white',
+        showspikes=True,
+        spikemode='toaxis',  # Horizontal line now goes specifically TO the axis
+        spikesnap='data',    # Snaps exactly to the trace value
+        spikethickness=1,
+        spikedash='dash',
+        spikecolor='#999999'
+    )
 
     return fig
