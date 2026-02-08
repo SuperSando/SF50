@@ -87,7 +87,7 @@ def generate_dashboard(df):
         hoverdistance=-1, 
         hoverlabel=dict(
             bgcolor="rgba(255, 255, 255, 0.95)",
-            font_size=14, # Slightly larger for better readability
+            font_size=14,
             font_family="Arial Black"
         ),
         plot_bgcolor="#f8f9fa", 
@@ -96,26 +96,24 @@ def generate_dashboard(df):
         margin=dict(l=20, r=20, t=40, b=20)
     )
 
-    # --- SPIKE LOGIC UPDATED ---
-    # Vertical line is now dashed ('dash')
+    # --- SPIKE LOGIC FIXED ---
     fig.update_xaxes(
         showspikes=True,
         spikemode='across',
         spikesnap='cursor', 
-        spikethickness=1.5,
-        spikedash='dash', # FIXED: Back to dashed
-        spikecolor='#444444',
+        spikethickness=2,
+        spikedash='dash', # Explicitly forced dashed
+        spikecolor='#555555',
         rangeslider_visible=False,
         showline=True, linewidth=1, linecolor='black', mirror=True, gridcolor='white'
     )
 
-    # Horizontal lines updated to show for all traces
     fig.update_yaxes(
         showspikes=True,
-        spikemode='across', # CHANGED: Now shows across for all active axes
+        spikemode='across', # Shows for all traces simultaneously
         spikesnap='data',
         spikethickness=1,
-        spikedash='dash',
+        spikedash='dash', # Explicitly forced dashed
         spikecolor='#999999',
         showline=True, linewidth=1, linecolor='black', mirror=True, gridcolor='white'
     )
