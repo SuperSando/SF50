@@ -96,25 +96,21 @@ def generate_dashboard(df):
         margin=dict(l=20, r=20, t=40, b=20)
     )
 
-    # --- SPIKE LOGIC FIXED ---
+    # --- VERTICAL SPIKE ONLY (DASHED) ---
     fig.update_xaxes(
         showspikes=True,
         spikemode='across',
         spikesnap='cursor', 
         spikethickness=2,
-        spikedash='dash', # Explicitly forced dashed
+        spikedash='dash',
         spikecolor='#555555',
         rangeslider_visible=False,
         showline=True, linewidth=1, linecolor='black', mirror=True, gridcolor='white'
     )
 
+    # --- HORIZONTAL SPIKES REMOVED ---
     fig.update_yaxes(
-        showspikes=True,
-        spikemode='across', # Shows for all traces simultaneously
-        spikesnap='data',
-        spikethickness=1,
-        spikedash='dash', # Explicitly forced dashed
-        spikecolor='#999999',
+        showspikes=False, # Clean look as requested
         showline=True, linewidth=1, linecolor='black', mirror=True, gridcolor='white'
     )
 
