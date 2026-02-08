@@ -2,9 +2,8 @@ import streamlit as st
 import pandas as pd
 import clean_flight_data as cleaner
 import graph_flight_interactive as visualizer
-from datetime import datetime
 import io
-from github import Github # Backend only
+from github import Github 
 
 # --- 1. AUTHENTICATION ---
 def check_password():
@@ -23,7 +22,6 @@ def check_password():
 @st.cache_resource
 def get_backend_connection():
     try:
-        # Pulling strings from secrets
         token_str = st.secrets["github_token"]["github_token"]
         repo_path_str = st.secrets["repo_path"]["repo_path"]
         g = Github(token_str)
@@ -50,7 +48,12 @@ if check_password() and repo:
             profile_names = []
 
         selected_profile = st.selectbox("Select Aircraft", ["New Profile..."] + sorted(profile_names))
-        tail_number = st.text_input("Tail Number (New)", placeholder="N123SF").upper().strip() if selected_profile == "New Profile..." else selected_profile
+        
+        if selected_profile == "New Profile...":
+            tail_number = st.text_input("Tail Number (New)", placeholder="N123SF").upper().strip()
+        else:
+            tail_number = selected_profile
+
         aircraft_sn = st.text_input("Aircraft S/N", placeholder="e.g. 1234")
         st.divider()
 
@@ -75,18 +78,16 @@ if check_password() and repo:
                     try:
                         file_to_delete = history_map[selected_history]
                         repo.delete_file(file_to_delete.path, f"Removed {selected_history}", file_to_delete.sha)
-                        st.sidebar.success("Log removed from cloud.")
+                        st.sidebar.success("Log removed.")
                         st.rerun()
                     except Exception:
-                        st.error("Delete Failed: Permission error.")
+                        st.error("Delete Failed.")
 
         st.divider()
-        # Upload Section
+        # Simplified Upload Section
         uploaded_file = st.file_uploader("Upload New Log", type="csv")
-        flight_dt = st.date_input("Flight Date", value=datetime.now())
-        flight_tm = st.time_input("Flight Time", value=datetime.now().time())
         
-        # --- BUTTON UPDATED TO "UPLOAD" ---
+        # Manual upload trigger to prevent "sticky file" bugs
         upload_btn = st.button("Upload", use_container_width=True, type="primary")
 
     # --- 3. DATA LOGIC ---
@@ -97,14 +98,14 @@ if check_password() and repo:
         with st.spinner("Processing & Saving..."):
             try:
                 df = cleaner.clean_data(uploaded_file)
-                dt_stamp = f"{flight_dt.strftime('%Y%m%d')}_{flight_tm.strftime('%H%M')}"
-                save_name = f"{dt_stamp}_{uploaded_file.name}"
+                # Filename is now exactly what the user uploaded
+                save_name = uploaded_file.name
                 file_path = f"data/{tail_number}/{save_name}"
                 
-                # Check for existing
+                # Check for existing file with the same name
                 try:
                     repo.get_contents(file_path)
-                    st.error(f"Error: {save_name} already exists in the cloud.")
+                    st.error(f"Error: {save_name} already exists.")
                 except:
                     repo.create_file(file_path, f"Add: {save_name}", df.to_csv(index=False))
                     st.sidebar.success(f"✅ Successfully Uploaded: {save_name}")
@@ -119,16 +120,19 @@ if check_password() and repo:
             df = pd.read_csv(io.StringIO(file_data.decoded_content.decode('utf-8')))
             active_source = selected_history
         except Exception:
-            st.error("Error loading history from cloud.")
+            st.error("Error loading history.")
 
     # --- 4. DASHBOARD ---
     if df is not None:
         st.title(f"✈️ {tail_number} Analysis")
+        st.caption(f"S/N: {aircraft_sn} | File: {active_source}")
+        
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Max GS", f"{df['Groundspeed'].max():.0f} kts")
         m2.metric("Peak ITT", f"{df['ITT (F)'].max():.0f} °F")
         m3.metric("Max N1", f"{df['N1 %'].max():.1f}%")
         m4.metric("Duration", f"{(len(df) / 60):.1f} min")
+        
         st.plotly_chart(visualizer.generate_dashboard(df), use_container_width=True)
     else:
         st.info("Upload a log or select from history to begin.")
