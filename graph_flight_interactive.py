@@ -57,7 +57,7 @@ def generate_dashboard(df):
                     visible=trace_visible, 
                     legendgroup=title,
                     line=dict(color=line_color, width=2),
-                    # Unified hover text
+                    # Ensuring hover info is standard for unified box
                     hovertemplate=f"<b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
                 ),
                 secondary_y=use_secondary, 
@@ -68,13 +68,14 @@ def generate_dashboard(df):
         height=800, 
         template="plotly_white", 
         # --- THE HUD SETTINGS ---
-        hovermode="x unified",     # Single box for all data
-        hoverdistance=-1,          # Capture data from anywhere on X
+        hovermode="x unified",
+        hoverdistance=-1, # Look for data across the whole X axis
+        spikedistance=-1, # Ensure spikes show up regardless of cursor distance
         hoverlabel=dict(
             bgcolor="rgba(255, 255, 255, 0.95)",
             font_size=13,
             font_family="Arial Black",
-            namelength=-1 
+            align="left"
         ),
         plot_bgcolor="#f8f9fa", 
         paper_bgcolor="white",    
@@ -82,22 +83,22 @@ def generate_dashboard(df):
         margin=dict(l=20, r=20, t=40, b=20)
     )
 
-    # --- CROSSHAIR & SPIKE LOGIC ---
+    # --- SPIKE & AXIS SETTINGS ---
     fig.update_xaxes(
         showspikes=True,
         spikemode='across',
-        spikesnap='cursor',        # Vertical strike line follows mouse EXACTLY
+        spikesnap='cursor', # Vertical line stays with mouse
         spikethickness=1,
-        spikedash='solid',         # Solid line for better visibility
-        spikecolor='#666666',      # Darker grey
+        spikedash='solid',
+        spikecolor='#666666',
         rangeslider_visible=False,
         showline=True, linewidth=1, linecolor='black', mirror=True, gridcolor='white'
     )
 
     fig.update_yaxes(
         showspikes=True,
-        spikemode='toaxis',        # Horizontal line to the y-axis
-        spikesnap='data',          # Snaps to the trace data point
+        spikemode='toaxis', 
+        spikesnap='data',   # Horizontal line snaps to data point to indicate value
         spikethickness=1,
         spikedash='dash',
         spikecolor='#999999',
