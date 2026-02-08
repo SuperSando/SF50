@@ -2,7 +2,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# --- CONFIGURATION ---
+# --- CONFIGURATION (UNCHANGED) ---
 GRAPH_MAPPINGS = {
     "Groundspeed": "Groundspeed", "Cabin Diff PSI": "Cabin Diff PSI", 
     "Bld Px PSI": "Bld Px PSI", "Bleed On": "Bleed On", "N1 %": "N1 %", 
@@ -87,7 +87,7 @@ def generate_dashboard(df):
     fig.update_layout(
         height=800, 
         template="plotly_white", 
-        hovermode="x unified",
+        hovermode="x unified", # Keeps the box with the cursor and shows all data
         hoverlabel=dict(
             bgcolor="rgba(255, 255, 255, 0.9)",
             font_size=13,
@@ -100,31 +100,23 @@ def generate_dashboard(df):
         margin=dict(l=20, r=20, t=40, b=20)
     )
 
-    # --- UPDATED SPIKELINE CONFIGURATION ---
+    # --- THE HYBRID SPIKE SETTINGS ---
     fig.update_xaxes(
         rangeslider_visible=False,
-        showline=True, 
-        linewidth=1, 
-        linecolor='black', 
-        mirror=True, 
-        gridcolor='white',
+        showline=True, linewidth=1, linecolor='black', mirror=True, gridcolor='white',
         showspikes=True,
-        spikemode='across', # Vertical line stays full height
-        spikesnap='cursor',
+        spikemode='across',
+        spikesnap='cursor', # Vertical line follows mouse
         spikethickness=1,
         spikedash='dash',
         spikecolor='#999999'
     )
 
     fig.update_yaxes(
-        showline=True, 
-        linewidth=1, 
-        linecolor='black', 
-        mirror=True, 
-        gridcolor='white',
+        showline=True, linewidth=1, linecolor='black', mirror=True, gridcolor='white',
         showspikes=True,
-        spikemode='toaxis',  # Horizontal line now goes specifically TO the axis
-        spikesnap='data',    # Snaps exactly to the trace value
+        spikemode='toaxis', # Horizontal line goes to the axis
+        spikesnap='data',   # BUT it snaps to the actual points on the trace
         spikethickness=1,
         spikedash='dash',
         spikecolor='#999999'
