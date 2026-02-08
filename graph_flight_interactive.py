@@ -2,7 +2,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# --- CONFIGURATION (UNCHANGED) ---
+# --- CONFIGURATION ---
 GRAPH_MAPPINGS = {
     "Groundspeed": "Groundspeed", "Cabin Diff PSI": "Cabin Diff PSI", 
     "Bld Px PSI": "Bld Px PSI", "Bleed On": "Bleed On", "N1 %": "N1 %", 
@@ -65,6 +65,7 @@ def generate_dashboard(df):
                 secondary_y=use_secondary, 
             )
 
+            # --- LIMIT LINES RESTORED ---
             if title in LIMIT_LINES:
                 for val, color, label in LIMIT_LINES[title]:
                     fig.add_trace(
@@ -83,26 +84,25 @@ def generate_dashboard(df):
     fig.update_layout(
         height=800, 
         template="plotly_white", 
-        hovermode="x unified",
+        hovermode="x unified", # Keeps everything in ONE box
+        hoverdistance=-1, 
         hoverlabel=dict(
             bgcolor="rgba(255, 255, 255, 0.95)",
             font_size=12,
-            font_family="Arial Black",
-            # THE TRICK: This helps keep the box anchored toward the top
-            yanchor="top" 
+            font_family="Arial Black"
+            # yanchor removed - it was causing the crash
         ),
-        # PINNING THE BOX: We use legend and margin settings to create a HUD feel
         plot_bgcolor="#f8f9fa", 
         paper_bgcolor="white",    
         legend=dict(title="<b>Click to Toggle:</b>", y=0.99, x=1.05),
-        margin=dict(l=20, r=20, t=60, b=20)
+        margin=dict(l=20, r=20, t=40, b=20)
     )
 
-    # --- THE TETHERED CROSSHAIR ---
+    # Vertical strike line follows cursor exactly
     fig.update_xaxes(
         showspikes=True,
         spikemode='across',
-        spikesnap='cursor', # Strike line follows mouse exactly
+        spikesnap='cursor', 
         spikethickness=1.5,
         spikedash='solid',
         spikecolor='#444444',
@@ -110,10 +110,11 @@ def generate_dashboard(df):
         showline=True, linewidth=1, linecolor='black', mirror=True, gridcolor='white'
     )
 
+    # Horizontal lines snap from data points to the axes
     fig.update_yaxes(
         showspikes=True,
         spikemode='toaxis', 
-        spikesnap='data',   # Horizontal line snaps to data
+        spikesnap='data',
         spikethickness=1,
         spikedash='dash',
         spikecolor='#999999',
