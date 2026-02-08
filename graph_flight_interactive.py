@@ -14,7 +14,6 @@ GRAPH_MAPPINGS = {
     "EIPS TMP (F)": "EIPS TMP (F)", "EIPS PRS PSI": "EIPS PRS PSI"
 }
 
-# Parameters visible on load
 DEFAULT_VISIBLE = ["ITT (F)", "N1 %", "Groundspeed"]
 
 UNITS = {
@@ -43,7 +42,6 @@ def generate_dashboard(df):
     
     fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-    # Plotly default color cycle to match annotations to line colors
     colors = ['#636EFA', '#EF553B', '#00CC96', '#AB63FA', '#FFA15A', '#19D3F3', '#FF6692', '#B6E880', '#FF97FF', '#FECB52']
     color_idx = 0
 
@@ -55,33 +53,35 @@ def generate_dashboard(df):
             unit = UNITS.get(title, "") 
             line_color = colors[color_idx % len(colors)]
             
-            is_visible = True if title in DEFAULT_VISIBLE else 'legendonly'
+            # THE FIX: Trace visibility vs Annotation visibility
+            trace_visible = True if title in DEFAULT_VISIBLE else 'legendonly'
+            anno_visible = True if title in DEFAULT_VISIBLE else False
 
             # 1. Main Data Trace
             fig.add_trace(
                 go.Scatter(
                     x=df[X_AXIS_COL], y=df[col_name], name=title, mode='lines', 
-                    visible=is_visible, legendgroup=title,
+                    visible=trace_visible, legendgroup=title,
                     line=dict(color=line_color),
                     hovertemplate=f"<b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
                 ),
                 secondary_y=use_secondary, 
             )
 
-            # 2. Add Label Annotation (Top-left corner)
-            # This places a small colored indicator in the UI
-            fig.add_annotation(
-                text=f"● {title}",
-                xref="paper", yref="paper",
-                x=0.01, y=1.0 - (color_idx * 0.03), # Stack them vertically
-                showarrow=False,
-                font=dict(size=12, color=line_color),
-                bgcolor="rgba(255,255,255,0.8)",
-                bordercolor=line_color,
-                borderwidth=1,
-                visible=is_visible, # Only shows if the line is on
-                name=f"label_{title}" # Metadata for toggling (some Plotly versions)
-            )
+            # 2. Add Label Annotation (Stacking in top-left)
+            if anno_visible:
+                fig.add_annotation(
+                    text=f"● {title}",
+                    xref="paper", yref="paper",
+                    x=0.01, y=0.98 - (len(fig.layout.annotations) * 0.04), 
+                    showarrow=False,
+                    font=dict(size=14, color=line_color, family="Arial Black"),
+                    bgcolor="rgba(255,255,255,0.7)",
+                    bordercolor=line_color,
+                    borderwidth=2,
+                    borderpad=4,
+                    visible=True 
+                )
 
             if title in LIMIT_LINES:
                 for val, color, label in LIMIT_LINES[title]:
@@ -91,7 +91,7 @@ def generate_dashboard(df):
                             mode='lines+text', text=[label, ""], textposition="top right",
                             line=dict(color=color, width=1, dash='dash'),
                             name=label, legendgroup=title, showlegend=False, 
-                            visible=is_visible, hoverinfo='skip'
+                            visible=trace_visible, hoverinfo='skip'
                         ),
                         secondary_y=use_secondary 
                     )
