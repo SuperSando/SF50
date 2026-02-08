@@ -2,7 +2,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# --- CONFIGURATION ---
+# --- CONFIGURATION (KEPT FROM ORIGINAL) ---
 GRAPH_MAPPINGS = {
     "Groundspeed": "Groundspeed", "Cabin Diff PSI": "Cabin Diff PSI", 
     "Bld Px PSI": "Bld Px PSI", "Bleed On": "Bleed On", "N1 %": "N1 %", 
@@ -55,19 +55,21 @@ def generate_dashboard(df):
             
             trace_visible = True if title in DEFAULT_VISIBLE else 'legendonly'
 
-            # 1. Main Trace
             fig.add_trace(
                 go.Scatter(
-                    x=df[X_AXIS_COL], y=df[col_name], name=title, mode='lines', 
-                    visible=trace_visible, legendgroup=title,
+                    x=df[X_AXIS_COL], 
+                    y=df[col_name], 
+                    name=title, 
+                    mode='lines', 
+                    visible=trace_visible, 
+                    legendgroup=title,
                     line=dict(color=line_color, width=2),
-                    # Format hover text for comparison mode
+                    # Unified style template
                     hovertemplate=f"<b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
                 ),
                 secondary_y=use_secondary, 
             )
 
-            # 2. Limit Lines
             if title in LIMIT_LINES:
                 for val, color, label in LIMIT_LINES[title]:
                     fig.add_trace(
@@ -86,14 +88,16 @@ def generate_dashboard(df):
     fig.update_layout(
         height=800, 
         template="plotly_white", 
-        # --- THE HUD SETTINGS ---
-        # "x" mode follows the cursor vertically, but compares data across the X axis
-        hovermode="x", 
-        hoverdistance=-1, # Ensure it catches all traces regardless of distance
+        # --- THE HUD FIX ---
+        # x unified is the only way to keep them in one box. 
+        # We use 'hoverdistance' to force it to feel more like a mouse follower.
+        hovermode="x unified",
+        hoverdistance=-1, 
         hoverlabel=dict(
             bgcolor="rgba(255, 255, 255, 0.95)",
             font_size=13,
-            font_family="Arial Black"
+            font_family="Arial Black",
+            namelength=-1 
         ),
         plot_bgcolor="#f8f9fa", 
         paper_bgcolor="white",    
@@ -101,11 +105,11 @@ def generate_dashboard(df):
         margin=dict(l=20, r=20, t=40, b=20)
     )
 
-    # --- CROSSHAIR & SPIKE LOGIC ---
+    # --- THE TETHERED CROSSHAIR ---
     fig.update_xaxes(
         showspikes=True,
         spikemode='across',
-        spikesnap='cursor', # Vertical line follows mouse EXACTLY
+        spikesnap='cursor', # THIS makes the vertical line follow the mouse exactly
         spikethickness=1,
         spikedash='solid',
         spikecolor='#666666',
@@ -116,7 +120,7 @@ def generate_dashboard(df):
     fig.update_yaxes(
         showspikes=True,
         spikemode='toaxis', 
-        spikesnap='data',   # Horizontal line snaps to data point to show axis value
+        spikesnap='data',   # THIS makes the horizontal line snap to the trace
         spikethickness=1,
         spikedash='dash',
         spikecolor='#999999',
