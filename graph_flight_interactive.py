@@ -3,7 +3,6 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 # --- CONFIGURATION ---
-# This maps the internal CSV column names to the labels shown on the graph
 GRAPH_MAPPINGS = {
     "Groundspeed": "Groundspeed", "Cabin Diff PSI": "Cabin Diff PSI", 
     "Bld Px PSI": "Bld Px PSI", "Bleed On": "Bleed On", "N1 %": "N1 %", 
@@ -15,7 +14,7 @@ GRAPH_MAPPINGS = {
     "EIPS TMP (F)": "EIPS TMP (F)", "EIPS PRS PSI": "EIPS PRS PSI"
 }
 
-# Add any titles here that you want to see immediately upon loading
+# Parameters visible on load
 DEFAULT_VISIBLE = ["ITT (F)", "N1 %", "Groundspeed"]
 
 UNITS = {
@@ -28,7 +27,6 @@ UNITS = {
     "EIPS PRS PSI": "psi"
 }
 
-# Red/Orange/Green limit lines for engine safety parameters
 LIMIT_LINES = {
     "ITT (F)": [(1610, "red", "Max T/O 10sec"), (1583, "orange", "Max T/O 5mins"), (1536, "green", "MCT")], 
     "N1 %": [(105.7, "red", "Tran. 30sec"), (104.7, "green", "MCT")], 
@@ -40,35 +38,51 @@ X_AXIS_COL = "Time"
 BIG_NUMBER_THRESHOLD = 500
 
 def generate_dashboard(df):
-    """Generates the interactive Plotly graph for the Streamlit dashboard."""
     if X_AXIS_COL in df.columns:
          df[X_AXIS_COL] = pd.to_numeric(df[X_AXIS_COL], errors='coerce')
     
-    # Create figure with secondary y-axis capability
     fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+    # Plotly default color cycle to match annotations to line colors
+    colors = ['#636EFA', '#EF553B', '#00CC96', '#AB63FA', '#FFA15A', '#19D3F3', '#FF6692', '#B6E880', '#FF97FF', '#FECB52']
+    color_idx = 0
 
     for title, col_name in GRAPH_MAPPINGS.items():
         if col_name in df.columns:
             df[col_name] = pd.to_numeric(df[col_name], errors='coerce')
             max_val = df[col_name].max()
-            
-            # Use secondary axis for smaller values (PSI, %, etc) and primary for larger (ITT, etc)
             use_secondary = not (max_val > BIG_NUMBER_THRESHOLD)
             unit = UNITS.get(title, "") 
+            line_color = colors[color_idx % len(colors)]
             
-            # Visibility logic
             is_visible = True if title in DEFAULT_VISIBLE else 'legendonly'
 
+            # 1. Main Data Trace
             fig.add_trace(
                 go.Scatter(
                     x=df[X_AXIS_COL], y=df[col_name], name=title, mode='lines', 
                     visible=is_visible, legendgroup=title,
+                    line=dict(color=line_color),
                     hovertemplate=f"<b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
                 ),
                 secondary_y=use_secondary, 
             )
 
-            # Add limit lines if they exist for this parameter
+            # 2. Add Label Annotation (Top-left corner)
+            # This places a small colored indicator in the UI
+            fig.add_annotation(
+                text=f"● {title}",
+                xref="paper", yref="paper",
+                x=0.01, y=1.0 - (color_idx * 0.03), # Stack them vertically
+                showarrow=False,
+                font=dict(size=12, color=line_color),
+                bgcolor="rgba(255,255,255,0.8)",
+                bordercolor=line_color,
+                borderwidth=1,
+                visible=is_visible, # Only shows if the line is on
+                name=f"label_{title}" # Metadata for toggling (some Plotly versions)
+            )
+
             if title in LIMIT_LINES:
                 for val, color, label in LIMIT_LINES[title]:
                     fig.add_trace(
@@ -81,19 +95,19 @@ def generate_dashboard(df):
                         ),
                         secondary_y=use_secondary 
                     )
+            
+            color_idx += 1
 
-    # General Layout Configuration
     fig.update_layout(
         height=800, 
         template="plotly_white", 
         hovermode="x unified",
         plot_bgcolor="#f8f9fa", 
         paper_bgcolor="white",    
-        legend=dict(title="Click to Toggle:", y=0.99, x=1.05),
+        legend=dict(title="<b>Click to Toggle:</b>", y=0.99, x=1.05),
         margin=dict(l=20, r=20, t=40, b=20)
     )
 
-    # Force the duplicate timeline (rangeslider) to stay hidden
     fig.update_xaxes(
         rangeslider_visible=False,
         showline=True, linewidth=1, linecolor='black', mirror=True, gridcolor='white'
