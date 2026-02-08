@@ -20,7 +20,6 @@ def check_password():
         return False
     return True
 
-# --- GITHUB CONNECTION ---
 @st.cache_resource
 def get_github_repo():
     try:
@@ -50,74 +49,80 @@ if check_password() and repo:
             profile_names = []
 
         selected_profile = st.selectbox("Select Aircraft", ["New Profile..."] + sorted(profile_names))
-        
-        if selected_profile == "New Profile...":
-            tail_number = st.text_input("Tail Number (New)", placeholder="N123SF").upper().strip()
-        else:
-            tail_number = selected_profile
-
+        tail_number = st.text_input("Tail Number (New)", placeholder="N123SF").upper().strip() if selected_profile == "New Profile..." else selected_profile
         aircraft_sn = st.text_input("Aircraft S/N", placeholder="e.g. 1234")
         st.divider()
 
         # History Selection
+        history_map = {}
         if tail_number:
             try:
                 history_files = repo.get_contents(f"data/{tail_number}")
-                history_list = [f.name for f in history_files if f.name.endswith(".csv")]
-                selected_history = st.selectbox("📜 Flight History", ["-- Load Previous --"] + sorted(history_list, reverse=True))
+                # We store the full file object so we can get the 'sha' for deletion
+                history_map = {f.name: f for f in history_files if f.name.endswith(".csv")}
+                selected_history = st.selectbox("📜 Flight History", ["-- Load Previous --"] + sorted(history_map.keys(), reverse=True))
             except:
                 selected_history = "-- Load Previous --"
         else:
             selected_history = "-- Load Previous --"
+
+        # --- NEW: THE DANGER ZONE (DELETION) ---
+        if selected_history != "-- Load Previous --":
+            st.divider()
+            with st.expander("⚠️ Danger Zone"):
+                st.write(f"Delete **{selected_history}**?")
+                confirm_delete = st.checkbox("I am sure I want to delete this log.")
+                if st.button("🗑️ Permanently Delete Log", type="primary", disabled=not confirm_delete):
+                    try:
+                        file_to_delete = history_map[selected_history]
+                        repo.delete_file(
+                            path=file_to_delete.path,
+                            message=f"Deleted log: {selected_history}",
+                            sha=file_to_delete.sha
+                        )
+                        st.sidebar.success(f"Deleted {selected_history}")
+                        st.rerun() # Refresh to update the dropdown list
+                    except Exception as e:
+                        st.error(f"Delete Failed: {e}")
 
         st.divider()
         uploaded_file = st.file_uploader("Upload New Log", type="csv")
         flight_dt = st.date_input("Flight Date", value=datetime.now())
         flight_tm = st.time_input("Flight Time", value=datetime.now().time())
 
-    # --- 3. DATA LOGIC & DUPLICATE PROTECTION ---
+    # --- 3. DATA LOGIC ---
     df = None
     active_source = ""
 
     if uploaded_file:
-        # 1. Clean data locally first to check validity
         df = cleaner.clean_data(uploaded_file)
         active_source = uploaded_file.name
-        
-        # 2. Build the unique path
         dt_stamp = f"{flight_dt.strftime('%Y%m%d')}_{flight_tm.strftime('%H%M')}"
         save_name = f"{dt_stamp}_{active_source}"
         file_path = f"data/{tail_number}/{save_name}"
         
-        # 3. Check GitHub for existence
         try:
             repo.get_contents(file_path)
-            # If we reach this line, the file exists
-            st.error(f"⚠️ Duplicate Error: {save_name} already exists for {tail_number}. Upload cancelled.")
-            df = None # Prevent display of the duplicate
+            st.error(f"⚠️ Duplicate Error: {save_name} already exists.")
+            df = None
         except:
-            # File doesn't exist, proceed with upload
-            with st.spinner("Pushing new log to GitHub..."):
-                csv_content = df.to_csv(index=False)
-                repo.create_file(file_path, f"Upload: {save_name}", csv_content)
-                st.sidebar.success(f"✅ Successfully Pushed: {save_name}")
+            with st.spinner("Pushing to GitHub..."):
+                repo.create_file(file_path, f"Upload: {save_name}", df.to_csv(index=False))
+                st.sidebar.success(f"✅ Pushed: {save_name}")
 
     elif selected_history != "-- Load Previous --":
-        file_content = repo.get_contents(f"data/{tail_number}/{selected_history}")
+        file_content = history_map[selected_history]
         df = pd.read_csv(io.StringIO(file_content.decoded_content.decode()))
         active_source = selected_history
 
     # --- 4. DASHBOARD ---
     if df is not None:
         st.title(f"✈️ {tail_number} Analysis")
-        st.caption(f"S/N: {aircraft_sn} | Source: {active_source}")
-        
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Max GS", f"{df['Groundspeed'].max():.0f} kts")
         m2.metric("Peak ITT", f"{df['ITT (F)'].max():.0f} °F")
         m3.metric("Max N1", f"{df['N1 %'].max():.1f}%")
         m4.metric("Duration", f"{(len(df) / 60):.1f} min")
-
         st.plotly_chart(visualizer.generate_dashboard(df), use_container_width=True)
     else:
-        st.info("Select an aircraft or upload a log to begin analysis.")
+        st.info("Select a log or upload data to begin.")
