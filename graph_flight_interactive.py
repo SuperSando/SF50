@@ -2,7 +2,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# --- CONFIGURATION (KEPT FROM ORIGINAL) ---
+# --- CONFIGURATION (UNCHANGED) ---
 GRAPH_MAPPINGS = {
     "Groundspeed": "Groundspeed", "Cabin Diff PSI": "Cabin Diff PSI", 
     "Bld Px PSI": "Bld Px PSI", "Bleed On": "Bleed On", "N1 %": "N1 %", 
@@ -57,14 +57,9 @@ def generate_dashboard(df):
 
             fig.add_trace(
                 go.Scatter(
-                    x=df[X_AXIS_COL], 
-                    y=df[col_name], 
-                    name=title, 
-                    mode='lines', 
-                    visible=trace_visible, 
-                    legendgroup=title,
+                    x=df[X_AXIS_COL], y=df[col_name], name=title, mode='lines', 
+                    visible=trace_visible, legendgroup=title,
                     line=dict(color=line_color, width=2),
-                    # Unified style template
                     hovertemplate=f"<b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
                 ),
                 secondary_y=use_secondary, 
@@ -88,31 +83,29 @@ def generate_dashboard(df):
     fig.update_layout(
         height=800, 
         template="plotly_white", 
-        # --- THE HUD FIX ---
-        # x unified is the only way to keep them in one box. 
-        # We use 'hoverdistance' to force it to feel more like a mouse follower.
         hovermode="x unified",
-        hoverdistance=-1, 
         hoverlabel=dict(
             bgcolor="rgba(255, 255, 255, 0.95)",
-            font_size=13,
+            font_size=12,
             font_family="Arial Black",
-            namelength=-1 
+            # THE TRICK: This helps keep the box anchored toward the top
+            yanchor="top" 
         ),
+        # PINNING THE BOX: We use legend and margin settings to create a HUD feel
         plot_bgcolor="#f8f9fa", 
         paper_bgcolor="white",    
         legend=dict(title="<b>Click to Toggle:</b>", y=0.99, x=1.05),
-        margin=dict(l=20, r=20, t=40, b=20)
+        margin=dict(l=20, r=20, t=60, b=20)
     )
 
     # --- THE TETHERED CROSSHAIR ---
     fig.update_xaxes(
         showspikes=True,
         spikemode='across',
-        spikesnap='cursor', # THIS makes the vertical line follow the mouse exactly
-        spikethickness=1,
+        spikesnap='cursor', # Strike line follows mouse exactly
+        spikethickness=1.5,
         spikedash='solid',
-        spikecolor='#666666',
+        spikecolor='#444444',
         rangeslider_visible=False,
         showline=True, linewidth=1, linecolor='black', mirror=True, gridcolor='white'
     )
@@ -120,7 +113,7 @@ def generate_dashboard(df):
     fig.update_yaxes(
         showspikes=True,
         spikemode='toaxis', 
-        spikesnap='data',   # THIS makes the horizontal line snap to the trace
+        spikesnap='data',   # Horizontal line snaps to data
         spikethickness=1,
         spikedash='dash',
         spikecolor='#999999',
