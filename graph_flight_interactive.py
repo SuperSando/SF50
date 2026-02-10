@@ -1,7 +1,7 @@
 import pandas as pd
 import plotly.graph_objects as go
 
-# --- 1. CONFIGURATION ---
+# --- CONFIGURATION (ITT, N1, N2, Oil Px limits restored) ---
 GRAPH_MAPPINGS = {
     "Groundspeed": "Groundspeed", "Cabin Diff PSI": "Cabin Diff PSI", 
     "Bld Px PSI": "Bld Px PSI", "Bleed On": "Bleed On", "N1 %": "N1 %", 
@@ -23,11 +23,6 @@ UNITS = {
     "EIPS PRS PSI": "psi"
 }
 
-PANE_MAP = {
-    "kts": "y1", "°F": "y1", "°C": "y1", 
-    "psi": "y2", "%": "y2", "°": "y2", "1=ON": "y2", "1=OPEN": "y2", "V": "y2" 
-}
-
 LIMIT_LINES = {
     "ITT (F)": [(1610, "red", "Max T/O 10sec"), (1583, "orange", "Max T/O 5mins"), (1536, "green", "MCT")], 
     "N1 %": [(105.7, "red", "Tran. 30sec"), (104.7, "green", "MCT")], 
@@ -42,7 +37,6 @@ def generate_dashboard(df, view_mode="Single View"):
     fig = go.Figure()
     colors = ['#2E5BFF', '#FF1744', '#00CC96', '#AB63FA', '#FFA15A', '#19D3F3', '#FF6692', '#B6E880', '#FF97FF', '#FECB52']
     color_idx = 0
-
     is_split = "Split View" in view_mode
 
     for title, col_name in GRAPH_MAPPINGS.items():
@@ -53,17 +47,17 @@ def generate_dashboard(df, view_mode="Single View"):
             trace_visible = True if title in ["ITT (F)", "N1 %", "Groundspeed"] else 'legendonly'
 
             # Logic for axis assignment
-            target_pane = PANE_MAP.get(unit, "y2") if is_split else ("y1" if unit in ["kts", "°F", "°C"] else "y2")
-            
-            # If in split mode, top pane traces need to use xaxis2 to get that top border
-            xaxis_ref = "x2" if (is_split and target_pane == "y1") else "x"
+            # Performance/Speed -> yaxis1, Systems/Logic -> yaxis2
+            if is_split:
+                target_yaxis = "y2" if unit in ["psi", "%", "°", "1=ON", "1=OPEN", "V"] else "y"
+            else:
+                target_yaxis = "y" if unit in ["kts", "°F", "°C"] else "y2"
 
             fig.add_trace(
                 go.Scatter(
                     x=df["Time"], y=df[col_name], name=title, mode='lines', 
                     visible=trace_visible, legendgroup=title,
-                    xaxis=xaxis_ref,
-                    yaxis="y2" if target_pane == "y2" else "y",
+                    yaxis=target_yaxis.replace("y", "y") if target_yaxis != "y" else "y",
                     line=dict(color=line_color, width=2.5),
                     hovertemplate=f"<b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
                 )
@@ -74,8 +68,7 @@ def generate_dashboard(df, view_mode="Single View"):
                     fig.add_trace(
                         go.Scatter(
                             x=[df["Time"].min(), df["Time"].max()], y=[val, val],
-                            xaxis=xaxis_ref,
-                            yaxis="y2" if target_pane == "y2" else "y",
+                            yaxis=target_yaxis.replace("y", "y") if target_yaxis != "y" else "y",
                             mode='lines+text', text=[label, ""], textposition="top right",
                             line=dict(color=color, width=1, dash='dash'),
                             name=label, legendgroup=title, showlegend=False, 
@@ -84,56 +77,53 @@ def generate_dashboard(df, view_mode="Single View"):
                     )
             color_idx += 1
 
-    # --- SHARED SPIKE CONFIG ---
-    spike_cfg = dict(
-        showspikes=True, spikemode='across', spikesnap='cursor',
-        spikethickness=2, spikedash='dash', spikecolor='#555555',
-        showline=True, linewidth=1, linecolor='black', mirror=True
-    )
-
+    # --- CORE LAYOUT SETTINGS ---
     layout_config = dict(
         height=800,
-        template="plotly_white", 
+        template="plotly_white",
         hovermode="x unified",
-        hoverdistance=-1, spikedistance=-1,
+        hoverdistance=-1,
+        spikedistance=-1, # Ensures the spike follows the cursor anywhere
+        hoverlabel=dict(bgcolor="white", font_size=14, font_family="Arial Black", font_color="black"),
         plot_bgcolor="white", paper_bgcolor="white", font=dict(color="black"),
         legend=dict(title="<b>Parameters:</b>", y=0.5, x=1.05, yanchor="middle"),
         margin=dict(l=20, r=20, t=30, b=50),
         
-        # BOTTOM X-AXIS
+        # THE FIX: One single X-Axis with spikemode 'across'
         xaxis=dict(
             title_text="<b>Time (Seconds)</b>",
-            anchor="y2" if is_split else "y",
-            gridcolor='#F0F2F6',
-            **spike_cfg
+            showgrid=True, gridcolor='#F0F2F6',
+            showspikes=True, 
+            spikemode='across', # This draws the line through all y-axis domains
+            spikesnap='cursor',
+            spikethickness=2, 
+            spikedash='dash', 
+            spikecolor='#555555',
+            showline=True, linewidth=1, linecolor='black', mirror=True
         ),
         
-        # TOP Y-AXIS
+        # Upper Area
         yaxis=dict(
             title_text="<b>Temp / Speed</b>",
-            domain=[0.53, 1] if is_split else [0, 1],
-            gridcolor='#F0F2F6', zeroline=False, showline=True, linecolor='black'
+            domain=[0.52, 1] if is_split else [0, 1],
+            gridcolor='#F0F2F6', zeroline=False, showline=True, linecolor='black', mirror=True
         )
     )
 
     if is_split:
-        # SECOND X-AXIS (The "Floor" for the upper plot)
-        layout_config["xaxis2"] = dict(
-            matches='x', # Syncs zoom/pan
-            anchor='y',  # Anchors to the top plot
-            showticklabels=False, # Hide labels so it doesn't look messy
-            **spike_cfg
-        )
-        # BOTTOM Y-AXIS
+        # Lower Area
         layout_config["yaxis2"] = dict(
             title_text="<b>PSI / % / Deg</b>",
-            domain=[0, 0.47],
-            gridcolor='#F0F2F6', zeroline=False, showline=True, linecolor='black'
+            domain=[0, 0.48],
+            gridcolor='#F0F2F6', zeroline=False, showline=True, linecolor='black', mirror=True,
+            anchor="x"
         )
     else:
+        # Overlay for single view
         layout_config["yaxis2"] = dict(
             title_text="<b>PSI / % / Deg</b>",
-            overlaying="y", side="right",
+            overlaying="y",
+            side="right",
             zeroline=False, showline=True, linecolor='black'
         )
 
