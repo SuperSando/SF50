@@ -3,7 +3,7 @@ import pandas as pd
 import clean_flight_data as cleaner
 import graph_flight_interactive as visualizer
 import io
-import base64
+import requests
 from github import Github 
 
 # --- 1. AUTHENTICATION & CONNECTION ---
@@ -63,7 +63,7 @@ if check_password() and repo:
         view_mode = st.radio("Dashboard Layout", ["Single View", "Split View"], index=1)
         st.divider()
 
-        # --- RE-ENGINEERED HISTORY ---
+        # --- RE-ENGINEERED HISTORY (STREAMING DOWNLOAD) ---
         st.subheader("📜 Flight History")
         try:
             history_path = f"data/{tail_number}"
@@ -80,15 +80,21 @@ if check_password() and repo:
                     col1, col2 = st.columns(2)
                     
                     if col1.button("Open", use_container_width=True, type="primary"):
-                        with st.spinner("Decoding Large Log..."):
+                        with st.spinner("Downloading Large Log..."):
                             try:
-                                # THE FIX: Get raw content directly using the file's git_url or content
+                                # THE FIX: Use download_url to pull the raw stream
+                                # This handles 12MB+ files much better than the API content property
                                 file_obj = history_map[selected_history]
-                                # We use base64 decoding manually to bypass GitHub's 'None' encoding bug
-                                content = base64.b64decode(file_obj.content)
-                                st.session_state.active_df = pd.read_csv(io.BytesIO(content))
-                                st.session_state.active_source = selected_history
-                                st.rerun()
+                                
+                                # Use requests to get the raw CSV stream
+                                response = requests.get(file_obj.download_url)
+                                if response.status_code == 200:
+                                    # Use BytesIO to feed the raw content into Pandas
+                                    st.session_state.active_df = pd.read_csv(io.BytesIO(response.content))
+                                    st.session_state.active_source = selected_history
+                                    st.rerun()
+                                else:
+                                    st.error(f"Download failed: Status {response.status_code}")
                             except Exception as e:
                                 st.error(f"Load Error: {e}")
 
