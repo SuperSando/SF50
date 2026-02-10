@@ -51,13 +51,21 @@ def generate_dashboard(df, view_mode="Single View"):
             else:
                 target_yaxis = "y" if unit in ["kts", "°F", "°C"] else "y2"
 
+            # --- THE TRACE-SPECIFIC HOVER ---
             fig.add_trace(
                 go.Scatter(
                     x=df["Time"], y=df[col_name], name=title, mode='lines', 
                     visible=trace_visible, legendgroup=title,
                     yaxis=target_yaxis.replace("y", "y") if target_yaxis != "y" else "y",
                     line=dict(color=line_color, width=2.5),
-                    hovertemplate=f"<b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
+                    # Label Styling: Colored border and bold text
+                    hoverlabel=dict(
+                        bordercolor=line_color, 
+                        bgcolor="white", 
+                        font_size=13, 
+                        font_family="Arial Black"
+                    ),
+                    hovertemplate=f"<b>{title}</b><br>%{{y:.1f}} {unit}<extra></extra>"
                 )
             )
 
@@ -79,19 +87,17 @@ def generate_dashboard(df, view_mode="Single View"):
     layout_config = dict(
         height=800,
         template="plotly_white",
-        hovermode="x unified",
+        # SWITCHED TO CLOSEST: Shows boxes following each line instead of one big box
+        hovermode="closest", 
         hoverdistance=-1,
         spikedistance=-1,
-        hoverlabel=dict(bgcolor="white", font_size=14, font_family="Arial Black", font_color="black"),
         plot_bgcolor="white", paper_bgcolor="white", font=dict(color="black"),
         legend=dict(title="<b>Parameters:</b>", y=0.5, x=1.05, yanchor="middle"),
         margin=dict(l=20, r=20, t=30, b=60),
         
         xaxis=dict(
             title_text="<b>Time (Seconds)</b>",
-            side="bottom",
-            anchor="free",
-            position=0,
+            side="bottom", anchor="free", position=0,
             showgrid=True, gridcolor='#F0F2F6',
             showspikes=True, spikemode='across', spikesnap='cursor',
             spikethickness=2, spikedash='dash', spikecolor='#555555',
@@ -110,25 +116,17 @@ def generate_dashboard(df, view_mode="Single View"):
             title_text="<b>PSI / % / Deg</b>",
             domain=[0, 0.47],
             gridcolor='#F0F2F6', zeroline=False, showline=True, linecolor='black', mirror=True,
-            anchor="free",
-            position=0
+            anchor="free", position=0
         )
-        
-        # --- FIXED WEIGHT DIVIDER ---
+        # DIVIDER LINE
         layout_config["shapes"] = [
-            dict(
-                type="line",
-                xref="paper", yref="paper",
-                x0=0, x1=1,
-                y0=0.5, y1=0.5, 
-                line=dict(color="black", width=1) # Thinner line to match axes
-            )
+            dict(type="line", xref="paper", yref="paper", x0=0, x1=1, y0=0.5, y1=0.5,
+                 line=dict(color="black", width=1))
         ]
     else:
         layout_config["yaxis2"] = dict(
             title_text="<b>PSI / % / Deg</b>",
-            overlaying="y",
-            side="right",
+            overlaying="y", side="right",
             zeroline=False, showline=True, linecolor='black'
         )
 
