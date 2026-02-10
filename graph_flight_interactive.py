@@ -36,10 +36,12 @@ def generate_dashboard(df_input, view_mode="Split View", active_list=None):
 
     is_split = "Split View" in view_mode
     
-    # Create the figure with correct spec for secondary Y
+    # FIX: Initialize with specific specs to prevent axis 'ghosting'
     if is_split:
-        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05)
+        # Two rows, each with their own independent Y-axis
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.07)
     else:
+        # Single row with a secondary Y-axis
         fig = make_subplots(rows=1, cols=1, specs=[[{"secondary_y": True}]])
 
     for g_name, g_info in GROUPS.items():
@@ -49,26 +51,27 @@ def generate_dashboard(df_input, view_mode="Split View", active_list=None):
                 val = pd.to_numeric(df[title], errors='coerce')
                 unit = UNITS.get(title, "")
                 
-                # Logic: Row 1 is Performance/Engine. Row 2 is Systems.
-                # In Single View, everything is Row 1, but Systems go to Secondary Y.
-                is_engine_param = unit in ["kts", "°F", "°C"]
+                # Assign Row/Axis based on Unit
+                is_engine = unit in ["kts", "°F", "°C"]
                 
-                row = 1 if (is_engine_param or not is_split) else 2
-                sec_y = (not is_engine_param) if not is_split else False
+                # Placement Logic
+                curr_row = 1 if (is_engine or not is_split) else 2
+                use_sec_y = (not is_engine) if not is_split else False
 
-                # Trace
+                # 1. TRACE
                 fig.add_trace(
                     go.Scatter(
                         x=df["Time"], y=val, name=title, mode='lines',
                         line=dict(color=base_color, width=2, dash=None if i < 3 else 'dot'),
                         legendgroup=g_name,
                         legendgrouptitle_text=g_name if i == 0 else None,
+                        hoverlabel=dict(bgcolor="rgba(255,255,255,0.5)", bordercolor=base_color),
                         hovertemplate=f"<b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
                     ),
-                    row=row, col=1, secondary_y=sec_y
+                    row=curr_row, col=1, secondary_y=use_sec_y
                 )
 
-                # Limits
+                # 2. LIMITS - Anchored strictly to the same row and axis as the data
                 if title in LIMIT_LINES:
                     for l_val, l_color, l_label in LIMIT_LINES[title]:
                         fig.add_trace(
@@ -78,27 +81,30 @@ def generate_dashboard(df_input, view_mode="Split View", active_list=None):
                                 line=dict(color=l_color, width=1.5, dash='dash'),
                                 hoverinfo='skip', showlegend=False, legendgroup=g_name
                             ),
-                            row=row, col=1, secondary_y=sec_y
+                            row=curr_row, col=1, secondary_y=use_sec_y
                         )
 
+    # Global Layout tweaks to fix the 'missing plot' issue
     fig.update_layout(
-        height=850, template="plotly_white", hovermode="x",
-        margin=dict(l=20, r=20, t=30, b=50),
-        legend=dict(groupclick="toggleitem", y=0.5, x=1.05)
+        height=850,
+        template="plotly_white",
+        hovermode="x",
+        margin=dict(l=60, r=60, t=30, b=50),
+        legend=dict(groupclick="toggleitem", y=0.5, x=1.1),
+        xaxis=dict(showspikes=True, spikemode='across', spikesnap='cursor',
+                   spikethickness=2, spikedash='dash', spikecolor='black')
     )
 
-    common_x = dict(showspikes=True, spikemode='across', spikesnap='cursor',
-                    spikethickness=2, spikedash='dash', spikecolor='black',
-                    showline=True, linecolor='black', mirror=True)
-
     if is_split:
-        fig.update_xaxes(common_x, row=1, col=1, matches='x')
-        fig.update_xaxes(common_x, row=2, col=1, title_text="Time (Seconds)", matches='x')
-        fig.update_yaxes(title_text="<b>Engine / Perf</b>", row=1, col=1)
-        fig.update_yaxes(title_text="<b>Systems / Air</b>", row=2, col=1)
+        # Label Row 1
+        fig.update_yaxes(title_text="<b>Performance / Engine</b>", row=1, col=1, showgrid=True)
+        # Label Row 2
+        fig.update_yaxes(title_text="<b>Systems / Air</b>", row=2, col=1, showgrid=True)
+        # Ensure X-axis is only at the bottom
+        fig.update_xaxes(title_text="Time (Seconds)", row=2, col=1)
     else:
-        fig.update_xaxes(common_x, title_text="Time (Seconds)")
-        fig.update_yaxes(title_text="<b>Engine / Perf</b>", secondary_y=False)
+        fig.update_yaxes(title_text="<b>Performance / Engine</b>", secondary_y=False)
         fig.update_yaxes(title_text="<b>Systems / Air</b>", secondary_y=True)
+        fig.update_xaxes(title_text="Time (Seconds)")
 
     return fig
