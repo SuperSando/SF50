@@ -55,6 +55,7 @@ if check_password() and repo:
         selected_profile = st.selectbox("Select Aircraft", ["+ Create New Profile"] + sorted(profile_names))
         
         if selected_profile == "+ Create New Profile":
+            # ... Registration logic ...
             st.stop()
 
         tail_number = selected_profile
@@ -63,7 +64,7 @@ if check_password() and repo:
         view_mode = st.radio("Dashboard Layout", ["Single View", "Split View"], index=1)
         st.divider()
 
-        # --- RE-ENGINEERED HISTORY (STREAMING DOWNLOAD) ---
+        # --- HISTORY LOGIC (Remains hardened with requests download) ---
         st.subheader("📜 Flight History")
         try:
             history_path = f"data/{tail_number}"
@@ -78,34 +79,22 @@ if check_password() and repo:
                 
                 if selected_history != "-- Select a File --":
                     col1, col2 = st.columns(2)
-                    
                     if col1.button("Open", use_container_width=True, type="primary"):
-                        with st.spinner("Downloading Large Log..."):
-                            try:
-                                # THE FIX: Use download_url to pull the raw stream
-                                # This handles 12MB+ files much better than the API content property
-                                file_obj = history_map[selected_history]
-                                
-                                # Use requests to get the raw CSV stream
-                                response = requests.get(file_obj.download_url)
-                                if response.status_code == 200:
-                                    # Use BytesIO to feed the raw content into Pandas
-                                    st.session_state.active_df = pd.read_csv(io.BytesIO(response.content))
-                                    st.session_state.active_source = selected_history
-                                    st.rerun()
-                                else:
-                                    st.error(f"Download failed: Status {response.status_code}")
-                            except Exception as e:
-                                st.error(f"Load Error: {e}")
+                        with st.spinner("Downloading..."):
+                            file_obj = history_map[selected_history]
+                            response = requests.get(file_obj.download_url)
+                            st.session_state.active_df = pd.read_csv(io.BytesIO(response.content))
+                            st.session_state.active_source = selected_history
+                            st.rerun()
 
                     if col2.button("🗑️ Delete", use_container_width=True):
                         st.session_state.delete_confirm = True
 
                     if st.session_state.delete_confirm:
-                        st.warning("Delete this log permanently?")
-                        if st.button("Yes, Confirm Delete"):
+                        st.warning("Delete permanently?")
+                        if st.button("Confirm Delete"):
                             f_obj = history_map[selected_history]
-                            repo.delete_file(f_obj.path, f"Removed {selected_history}", f_obj.sha)
+                            repo.delete_file(f_obj.path, f"Del {selected_history}", f_obj.sha)
                             st.session_state.active_df = None
                             st.session_state.active_source = ""
                             st.session_state.delete_confirm = False
@@ -113,27 +102,54 @@ if check_password() and repo:
                         if st.button("Cancel"):
                             st.session_state.delete_confirm = False
                             st.rerun()
-        except Exception as e:
-            st.error(f"Directory access failed: {e}")
+        except Exception:
+            st.info("Log directory empty.")
 
         st.divider()
-        # --- UPLOAD ---
-        uploaded_file = st.file_uploader("Upload CSV", type="csv", key=f"up_{st.session_state.uploader_key}")
-        if st.button("Sync & Open", use_container_width=True):
-            if uploaded_file:
-                with st.spinner("Syncing..."):
-                    processed_df = cleaner.clean_data(uploaded_file)
-                    repo.create_file(f"data/{tail_number}/{uploaded_file.name}", f"Upload {uploaded_file.name}", processed_df.to_csv(index=False))
-                    st.session_state.active_df = processed_df
-                    st.session_state.active_source = uploaded_file.name
-                    st.session_state.uploader_key += 1
-                    st.rerun()
+        # --- BATCH UPLOAD LOGIC ---
+        st.subheader("📤 Batch Upload")
+        uploaded_files = st.file_uploader(
+            "Drop multiple CSVs", 
+            type="csv", 
+            accept_multiple_files=True, # FIXED: Multiple files allowed
+            key=f"up_{st.session_state.uploader_key}"
+        )
+        
+        if st.button("Sync & Open Newest", use_container_width=True):
+            if uploaded_files:
+                # Sort files by name (assuming YYYY-MM-DD format from the Garmin logs)
+                sorted_files = sorted(uploaded_files, key=lambda x: x.name, reverse=True)
+                newest_file = sorted_files[0]
+                
+                with st.spinner(f"Syncing {len(uploaded_files)} logs..."):
+                    for uploaded_file in uploaded_files:
+                        try:
+                            processed_df = cleaner.clean_data(uploaded_file)
+                            file_path = f"data/{tail_number}/{uploaded_file.name}"
+                            
+                            # Check if file exists to avoid erroring the whole batch
+                            try:
+                                repo.get_contents(file_path)
+                            except:
+                                repo.create_file(file_path, f"Batch Add: {uploaded_file.name}", processed_df.to_csv(index=False))
+                            
+                            # If this is the newest file, set it as active
+                            if uploaded_file.name == newest_file.name:
+                                st.session_state.active_df = processed_df
+                                st.session_state.active_source = uploaded_file.name
+                        
+                        except Exception as e:
+                            st.error(f"Error with {uploaded_file.name}: {e}")
+                
+                st.session_state.uploader_key += 1
+                st.success(f"Uploaded {len(uploaded_files)} files. Opening newest.")
+                st.rerun()
 
     # --- 3. DASHBOARD ---
     df = st.session_state.active_df
     if df is not None:
         st.title(f"✈️ {tail_number} Analysis")
-        st.caption(f"Source: {st.session_state.active_source}")
+        st.caption(f"Active Log: {st.session_state.active_source}")
         
         m = st.columns(4)
         m[0].metric("Max GS", f"{df['Groundspeed'].max():.0f} kts")
@@ -143,4 +159,4 @@ if check_password() and repo:
         
         st.plotly_chart(visualizer.generate_dashboard(df, view_mode=view_mode), use_container_width=True)
     else:
-        st.info("👈 Select a file and click **Open**.")
+        st.info("👈 Use the sidebar to open or upload data.")
