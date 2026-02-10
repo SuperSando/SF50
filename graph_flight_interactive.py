@@ -25,7 +25,7 @@ UNITS = {
 }
 
 LIMIT_LINES = {
-    "ITT (F)": [(1610, "red", "Max T/O"), (1536, "green", "MCT")], 
+    "ITT (F)": [(1610, "red", "Max T/O"), (1583, "orange", "Max T/O 5min"), (1536, "green", "MCT")], 
     "N1 %": [(104.7, "green", "MCT")], 
     "N2 %": [(100, "green", "MCT")], 
     "Oil Px PSI": [(120, "green", "max")]
@@ -44,40 +44,37 @@ def generate_dashboard(df_input, view_mode="Split View"):
     else:
         fig = make_subplots(rows=1, cols=1, specs=[[{"secondary_y": True}]])
 
+    # 20 Distinct Colors
     colors = ['#2E5BFF', '#FF1744', '#00CC96', '#AB63FA', '#FFA15A', '#19D3F3', '#FF6692', '#B6E880', '#FF97FF', '#FECB52', 
               '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
     
     for i, (title, col_name) in enumerate(GRAPH_MAPPINGS.items()):
         if col_name in df.columns:
-            # Prepare data
             data = pd.to_numeric(df[col_name], errors='coerce')
             unit = UNITS.get(title, "")
             line_color = colors[i % len(colors)]
+            
+            # Default visibility
             is_visible = True if title in ["N2 %", "Bld Px PSI"] else 'legendonly'
 
-            # --- CRITICAL COORDINATE MATH ---
-            # Group 1 (Top/Primary): Speeds and Temps
-            # Group 2 (Bottom/Secondary): Pressure and Percentages
+            # Logic: Row 1 = Speeds/Temps | Row 2 = PSI/%/Systems
             is_perf_group = unit in ["kts", "°F", "°C"]
-            
-            # Map to Row
             target_row = 1 if (is_perf_group or not is_split) else 2
-            
-            # Map to Secondary Y (Only applies in Single View)
             target_sec_y = (not is_perf_group) if not is_split else False
 
             # 1. ADD DATA TRACE
             fig.add_trace(
                 go.Scatter(
                     x=df["Time"], y=data, name=title, mode='lines',
-                    line=dict(color=line_color, width=2),
+                    line=dict(color=line_color, width=2.5),
                     visible=is_visible,
+                    legendgroup=title, # LOCK TO TITLE
                     hovertemplate=f"<b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
                 ),
                 row=target_row, col=1, secondary_y=target_sec_y
             )
 
-            # 2. ADD LIMIT LINES (Locked to identical Row/Sec_Y as the trace above)
+            # 2. ADD LIMIT LINES (Linked to Title and Visibility)
             if title in LIMIT_LINES:
                 for l_val, l_color, l_label in LIMIT_LINES[title]:
                     fig.add_trace(
@@ -86,15 +83,15 @@ def generate_dashboard(df_input, view_mode="Split View"):
                             mode='lines+text', 
                             text=[f" {l_label}", ""], 
                             textposition="top right",
-                            line=dict(color=l_color, width=1.5, dash='dash'),
+                            line=dict(color=l_color, width=1.2, dash='dash'),
                             hoverinfo='skip', 
                             showlegend=False, 
-                            visible=is_visible
+                            visible=is_visible, # SYNCED
+                            legendgroup=title   # SYNCED
                         ),
                         row=target_row, col=1, secondary_y=target_sec_y
                     )
 
-    # Styling and Interaction
     fig.update_layout(
         height=850,
         template="plotly_white",
