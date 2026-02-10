@@ -32,7 +32,7 @@ def get_backend_connection():
 
 repo = get_backend_connection()
 
-# Initialize session state for the uploader and the active data
+# Initialize session state
 if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0
 if "active_df" not in st.session_state:
@@ -55,7 +55,7 @@ if check_password() and repo:
 
         selected_profile = st.selectbox("Select Aircraft", ["+ Create New Profile"] + sorted(profile_names))
         
-        # Reset active data if we switch aircraft
+        # Reset data if we switch aircraft
         if "last_profile" not in st.session_state:
             st.session_state.last_profile = selected_profile
         if st.session_state.last_profile != selected_profile:
@@ -94,30 +94,41 @@ if check_password() and repo:
             st.caption(f"Serial Number: {aircraft_sn}")
             st.divider()
 
-            # --- NEW: VIEW MODE SELECTION ---
+            # Display Settings
             st.subheader("🖼️ Display Settings")
             view_mode = st.radio(
                 "Dashboard Layout",
                 ["Single View", "Split View"],
-                index=1, # Defaults to Split View
+                index=1,
                 help="Single View overlays all data. Split View separates Performance from Systems."
             )
             st.divider()
 
-            # History Selection
+            # --- UPDATED HISTORY LOGIC ---
             try:
                 history_files = repo.get_contents(f"data/{tail_number}")
                 history_map = {f.name: f for f in history_files if f.name.endswith(".csv")}
-                selected_history = st.selectbox("📜 Flight History", ["-- Load Previous --"] + sorted(history_map.keys(), reverse=True))
                 
-                if selected_history != "-- Load Previous --":
-                    full_file_path = f"data/{tail_number}/{selected_history}"
-                    file_data = repo.get_contents(full_file_path)
-                    st.session_state.active_df = pd.read_csv(io.StringIO(file_data.decoded_content.decode('utf-8')))
-                    st.session_state.active_source = selected_history
-                else:
-                    st.session_state.active_df = None
-                    st.session_state.active_source = ""
+                # Check if we should override the dropdown selection if a file was just uploaded
+                current_source = st.session_state.active_source
+                
+                selected_history = st.selectbox(
+                    "📜 Flight History", 
+                    ["-- Load Previous --"] + sorted(history_map.keys(), reverse=True),
+                    index=0 if not current_source else (sorted(history_map.keys(), reverse=True).index(current_source) + 1 if current_source in history_map else 0)
+                )
+                
+                # If user selects a history file, load it into session state
+                if selected_history != "-- Load Previous --" and selected_history != st.session_state.active_source:
+                    with st.spinner("Fetching from cloud..."):
+                        full_file_path = f"data/{tail_number}/{selected_history}"
+                        file_data = repo.get_contents(full_file_path)
+                        st.session_state.active_df = pd.read_csv(io.StringIO(file_data.decoded_content.decode('utf-8')))
+                        st.session_state.active_source = selected_history
+                        st.rerun()
+                elif selected_history == "-- Load Previous --" and st.session_state.active_source != "":
+                    # Allow uploader to keep its data even if history says "Load Previous"
+                    pass
             except:
                 selected_history = "-- Load Previous --"
 
@@ -139,30 +150,35 @@ if check_password() and repo:
                 type="csv", 
                 key=f"uploader_{st.session_state.uploader_key}"
             )
-            upload_btn = st.button("Upload", use_container_width=True, type="primary")
+            upload_btn = st.button("Upload & Process", use_container_width=True, type="primary")
 
-    # --- 3. DATA LOGIC ---
+    # --- 3. DATA UPLOAD LOGIC ---
     if uploaded_file and upload_btn:
-        with st.spinner("Uploading & Opening..."):
+        with st.spinner("Processing Large Log... This may take a moment."):
             try:
+                # Clean locally first so data shows up even if GitHub sync is slow
                 processed_df = cleaner.clean_data(uploaded_file)
                 save_name = uploaded_file.name
                 file_path = f"data/{tail_number}/{save_name}"
                 
                 try:
                     repo.get_contents(file_path)
-                    st.error("This file already exists.")
+                    st.error("This file already exists in the cloud.")
                 except:
-                    repo.create_file(file_path, f"Add: {save_name}", processed_df.to_csv(index=False))
+                    # Sync to GitHub
+                    csv_content = processed_df.to_csv(index=False)
+                    repo.create_file(file_path, f"Add: {save_name}", csv_content)
+                    
+                    # Update Session State immediately
                     st.session_state.active_df = processed_df
                     st.session_state.active_source = save_name
                     st.session_state.uploader_key += 1
-                    st.success("File uploaded and opened!")
+                    st.success(f"Success! {save_name} is now active.")
                     st.rerun()
             except Exception as e:
                 st.error(f"Processing error: {e}")
 
-    # --- 4. DASHBOARD ---
+    # --- 4. DASHBOARD RENDER ---
     df = st.session_state.active_df
     active_source = st.session_state.active_source
 
@@ -176,7 +192,7 @@ if check_password() and repo:
         m3.metric("Max N1", f"{df['N1 %'].max():.1f}%")
         m4.metric("Duration", f"{(len(df) / 60):.1f} min")
         
-        # --- PASS VIEW MODE TO VISUALIZER ---
+        # Pass view_mode from sidebar selection
         st.plotly_chart(visualizer.generate_dashboard(df, view_mode=view_mode), use_container_width=True)
     else:
-        st.info(f"Dashboard for **{tail_number}** is empty.")
+        st.info(f"Dashboard for **{tail_number}** is empty. Upload a flight log or select one from history.")
