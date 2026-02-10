@@ -1,7 +1,7 @@
 import pandas as pd
 import plotly.graph_objects as go
 
-# --- CONFIGURATION (ITT, N1, N2, Oil Px limits restored) ---
+# --- 1. CONFIGURATION ---
 GRAPH_MAPPINGS = {
     "Groundspeed": "Groundspeed", "Cabin Diff PSI": "Cabin Diff PSI", 
     "Bld Px PSI": "Bld Px PSI", "Bleed On": "Bleed On", "N1 %": "N1 %", 
@@ -35,9 +35,9 @@ def generate_dashboard(df, view_mode="Single View"):
          df["Time"] = pd.to_numeric(df["Time"], errors='coerce')
 
     fig = go.Figure()
+    is_split = "Split View" in view_mode
     colors = ['#2E5BFF', '#FF1744', '#00CC96', '#AB63FA', '#FFA15A', '#19D3F3', '#FF6692', '#B6E880', '#FF97FF', '#FECB52']
     color_idx = 0
-    is_split = "Split View" in view_mode
 
     for title, col_name in GRAPH_MAPPINGS.items():
         if col_name in df.columns:
@@ -46,8 +46,7 @@ def generate_dashboard(df, view_mode="Single View"):
             line_color = colors[color_idx % len(colors)]
             trace_visible = True if title in ["ITT (F)", "N1 %", "Groundspeed"] else 'legendonly'
 
-            # Logic for axis assignment
-            # Performance/Speed -> yaxis1, Systems/Logic -> yaxis2
+            # Logic: Performance/Speed -> Y-axis 1, Systems/Logic -> Y-axis 2
             if is_split:
                 target_yaxis = "y2" if unit in ["psi", "%", "°", "1=ON", "1=OPEN", "V"] else "y"
             else:
@@ -77,49 +76,49 @@ def generate_dashboard(df, view_mode="Single View"):
                     )
             color_idx += 1
 
-    # --- CORE LAYOUT SETTINGS ---
+    # --- THE LAYOUT GEOMETRY ---
     layout_config = dict(
         height=800,
         template="plotly_white",
         hovermode="x unified",
         hoverdistance=-1,
-        spikedistance=-1, # Ensures the spike follows the cursor anywhere
+        spikedistance=-1,
         hoverlabel=dict(bgcolor="white", font_size=14, font_family="Arial Black", font_color="black"),
         plot_bgcolor="white", paper_bgcolor="white", font=dict(color="black"),
         legend=dict(title="<b>Parameters:</b>", y=0.5, x=1.05, yanchor="middle"),
-        margin=dict(l=20, r=20, t=30, b=50),
+        margin=dict(l=20, r=20, t=30, b=60),
         
-        # THE FIX: One single X-Axis with spikemode 'across'
+        # X-AXIS: Forced to the bottom
         xaxis=dict(
             title_text="<b>Time (Seconds)</b>",
+            side="bottom",
+            anchor="free",  # Free it from Y1
+            position=0,     # Place it at the absolute bottom
             showgrid=True, gridcolor='#F0F2F6',
-            showspikes=True, 
-            spikemode='across', # This draws the line through all y-axis domains
-            spikesnap='cursor',
-            spikethickness=2, 
-            spikedash='dash', 
-            spikecolor='#555555',
+            showspikes=True, spikemode='across', spikesnap='cursor',
+            spikethickness=2, spikedash='dash', spikecolor='#555555',
             showline=True, linewidth=1, linecolor='black', mirror=True
         ),
         
-        # Upper Area
+        # Y-AXIS 1: Performance (Top)
         yaxis=dict(
             title_text="<b>Temp / Speed</b>",
-            domain=[0.52, 1] if is_split else [0, 1],
+            domain=[0.53, 1] if is_split else [0, 1],
             gridcolor='#F0F2F6', zeroline=False, showline=True, linecolor='black', mirror=True
         )
     )
 
     if is_split:
-        # Lower Area
+        # Y-AXIS 2: Systems (Bottom)
         layout_config["yaxis2"] = dict(
             title_text="<b>PSI / % / Deg</b>",
-            domain=[0, 0.48],
+            domain=[0, 0.47],
             gridcolor='#F0F2F6', zeroline=False, showline=True, linecolor='black', mirror=True,
-            anchor="x"
+            anchor="free",
+            position=0
         )
     else:
-        # Overlay for single view
+        # SINGLE VIEW: Secondary scale on right
         layout_config["yaxis2"] = dict(
             title_text="<b>PSI / % / Deg</b>",
             overlaying="y",
