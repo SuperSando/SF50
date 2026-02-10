@@ -35,9 +35,11 @@ def generate_dashboard(df, view_mode="Single View"):
     if "Time" in df.columns:
         df["Time"] = pd.to_numeric(df["Time"], errors='coerce')
 
-    # Create subplots
-    if "Split View" in view_mode:
-        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.02)
+    is_split = "Split View" in view_mode
+    
+    # Initialize Subplots
+    if is_split:
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03)
         height = 850
     else:
         fig = make_subplots(rows=1, cols=1, specs=[[{"secondary_y": True}]])
@@ -52,30 +54,25 @@ def generate_dashboard(df, view_mode="Single View"):
             line_color = colors[color_idx % len(colors)]
             trace_visible = True if title in ["ITT (F)", "N1 %", "Groundspeed"] else 'legendonly'
 
-            # Determine row for split view
-            # Row 1: Speed/Temp | Row 2: Systems
-            row = 1 if unit in ["kts", "°F", "°C"] else 2
-            if "Single View" in view_mode: row = 1
-            
-            # Secondary Y logic for single view
+            row = 1 if unit in ["kts", "°F", "°C"] else (2 if is_split else 1)
             is_sec = False if unit in ["kts", "°F", "°C"] else True
 
-            # DATA TRACE
+            # DATA TRACES
             fig.add_trace(
                 go.Scatter(
                     x=df["Time"], y=df[col_name], name=title, mode='lines',
-                    line=dict(color=line_color, width=2),
+                    line=dict(color=line_color, width=2.5),
                     visible=trace_visible,
+                    # TRANSLUCENT HOVER LABELS
                     hoverlabel=dict(
-                        bgcolor="rgba(255,255,255,0.7)", 
+                        bgcolor="rgba(255,255,255,0.6)", # High translucency
                         bordercolor=line_color,
                         font=dict(family="Arial Black", size=12, color="black")
                     ),
-                    hovertemplate=f"<b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
+                    hovertemplate=f"<b>{title}</b><br>%{{y:.1f}} {unit}<extra></extra>"
                 ),
-                row=row if "Split" in view_mode else 1, 
-                col=1,
-                secondary_y=is_sec if "Single" in view_mode else None
+                row=row, col=1,
+                secondary_y=is_sec if not is_split else None
             )
 
             # LIMIT LINES (Restored with Labels)
@@ -88,36 +85,41 @@ def generate_dashboard(df, view_mode="Single View"):
                             line=dict(color=color, width=1, dash='dash'),
                             hoverinfo='skip', showlegend=False, visible=trace_visible
                         ),
-                        row=row if "Split" in view_mode else 1, col=1
+                        row=row, col=1
                     )
             color_idx += 1
 
-    # --- THE GLOBAL SYNC OVERRIDE ---
+    # --- THE MAGIC SETTINGS FOR SYNCHRONIZATION ---
     fig.update_layout(
         height=height,
         template="plotly_white",
-        hovermode="x", # Triggers ALL traces at X
+        hovermode="x", # Forces all traces on the X-axis to report
         hoverdistance=-1,
         spikedistance=-1,
-        margin=dict(l=50, r=50, t=30, b=50),
+        margin=dict(l=20, r=20, t=30, b=50),
         legend=dict(y=0.5, x=1.05)
     )
 
-    # Spike and Axis Style
-    common_x = dict(
-        showspikes=True, spikemode='across', spikesnap='cursor',
-        spikethickness=1, spikedash='dash', spikecolor='black',
+    # Spike Configuration
+    spike_style = dict(
+        showspikes=True,
+        spikemode='across', # Draws the line across the entire plot height
+        spikesnap='cursor',
+        spikethickness=2,
+        spikedash='dash',
+        spikecolor='#555555',
         showline=True, linewidth=1, linecolor='black', mirror=True
     )
 
-    if "Split View" in view_mode:
-        fig.update_xaxes(common_x, row=1, col=1)
-        fig.update_xaxes(common_x, row=2, col=1, title_text="Time (Seconds)")
-        fig.update_yaxes(title_text="Perf / Temp", row=1, col=1, showline=True, linecolor='black')
-        fig.update_yaxes(title_text="Systems / PSI", row=2, col=1, showline=True, linecolor='black')
+    if is_split:
+        # Match X-axes so interactions on one trigger the other
+        fig.update_xaxes(spike_style, row=1, col=1, matches='x')
+        fig.update_xaxes(spike_style, row=2, col=1, title_text="<b>Time (Seconds)</b>", matches='x')
+        fig.update_yaxes(title_text="<b>Perf / Speed</b>", row=1, col=1, showline=True, linecolor='black')
+        fig.update_yaxes(title_text="<b>Systems / PSI</b>", row=2, col=1, showline=True, linecolor='black')
     else:
-        fig.update_xaxes(common_x, title_text="Time (Seconds)")
-        fig.update_yaxes(title_text="Perf / Temp", secondary_y=False)
-        fig.update_yaxes(title_text="Systems / PSI", secondary_y=True)
+        fig.update_xaxes(spike_style, title_text="<b>Time (Seconds)</b>")
+        fig.update_yaxes(title_text="<b>Perf / Speed</b>", secondary_y=False)
+        fig.update_yaxes(title_text="<b>Systems / PSI</b>", secondary_y=True)
 
     return fig
