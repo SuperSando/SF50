@@ -94,20 +94,28 @@ if check_password() and repo:
             st.caption(f"Serial Number: {aircraft_sn}")
             st.divider()
 
+            # --- NEW: VIEW MODE SELECTION ---
+            st.subheader("🖼️ Display Settings")
+            view_mode = st.radio(
+                "Dashboard Layout",
+                ["Single View", "Split View"],
+                index=1, # Defaults to Split View
+                help="Single View overlays all data. Split View separates Performance from Systems."
+            )
+            st.divider()
+
             # History Selection
             try:
                 history_files = repo.get_contents(f"data/{tail_number}")
                 history_map = {f.name: f for f in history_files if f.name.endswith(".csv")}
                 selected_history = st.selectbox("📜 Flight History", ["-- Load Previous --"] + sorted(history_map.keys(), reverse=True))
                 
-                # If user selects from history, it overrides any temporary "active_df"
                 if selected_history != "-- Load Previous --":
                     full_file_path = f"data/{tail_number}/{selected_history}"
                     file_data = repo.get_contents(full_file_path)
                     st.session_state.active_df = pd.read_csv(io.StringIO(file_data.decoded_content.decode('utf-8')))
                     st.session_state.active_source = selected_history
                 else:
-                    # NEW: Clear the screen if the user resets the dropdown
                     st.session_state.active_df = None
                     st.session_state.active_source = ""
             except:
@@ -145,14 +153,9 @@ if check_password() and repo:
                     repo.get_contents(file_path)
                     st.error("This file already exists.")
                 except:
-                    # Upload to GitHub
                     repo.create_file(file_path, f"Add: {save_name}", processed_df.to_csv(index=False))
-                    
-                    # Update session state so it displays immediately
                     st.session_state.active_df = processed_df
                     st.session_state.active_source = save_name
-                    
-                    # Clear uploader for next time
                     st.session_state.uploader_key += 1
                     st.success("File uploaded and opened!")
                     st.rerun()
@@ -173,6 +176,7 @@ if check_password() and repo:
         m3.metric("Max N1", f"{df['N1 %'].max():.1f}%")
         m4.metric("Duration", f"{(len(df) / 60):.1f} min")
         
-        st.plotly_chart(visualizer.generate_dashboard(df), use_container_width=True)
+        # --- PASS VIEW MODE TO VISUALIZER ---
+        st.plotly_chart(visualizer.generate_dashboard(df, view_mode=view_mode), use_container_width=True)
     else:
         st.info(f"Dashboard for **{tail_number}** is empty.")
