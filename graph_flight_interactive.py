@@ -1,5 +1,6 @@
 import pandas as pd
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 # --- 1. CONFIGURATION ---
 GRAPH_MAPPINGS = {
@@ -34,8 +35,16 @@ def generate_dashboard(df, view_mode="Single View"):
     if "Time" in df.columns:
         df["Time"] = pd.to_numeric(df["Time"], errors='coerce')
 
-    fig = go.Figure()
     is_split = "Split View" in view_mode
+    
+    # 1. ARCHITECTURE: Back to subplots for correct axis management
+    if is_split:
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03)
+        height = 850
+    else:
+        fig = make_subplots(rows=1, cols=1, specs=[[{"secondary_y": True}]])
+        height = 800
+
     colors = ['#2E5BFF', '#FF1744', '#00CC96', '#AB63FA', '#FFA15A', '#19D3F3', '#FF6692', '#B6E880', '#FF97FF', '#FECB52']
     color_idx = 0
 
@@ -45,78 +54,73 @@ def generate_dashboard(df, view_mode="Single View"):
             line_color = colors[color_idx % len(colors)]
             trace_visible = True if title in ["ITT (F)", "N1 %", "Groundspeed"] else 'legendonly'
 
-            # Define which Y-axis to use. 
-            # In Split: Performance -> y1, Systems -> y2.
-            # In Single: Temp/Speed -> y1, Others -> y2 (Right side).
-            if is_split:
-                target_yaxis = "y2" if unit in ["psi", "%", "°", "1=ON", "1=OPEN", "V"] else "y"
-            else:
-                target_yaxis = "y" if unit in ["kts", "°F", "°C"] else "y2"
+            # Define Row (Split View)
+            row_idx = 1 if unit in ["kts", "°F", "°C"] else 2
+            if not is_split: row_idx = 1
+            
+            # Define Secondary Y (Single View)
+            is_sec = False if unit in ["kts", "°F", "°C"] else True
 
+            # DATA TRACE
             fig.add_trace(
                 go.Scatter(
                     x=df["Time"], y=df[col_name], name=title, mode='lines',
-                    line=dict(color=line_color, width=2),
+                    line=dict(color=line_color, width=2.5),
                     visible=trace_visible,
-                    yaxis=target_yaxis.replace("y", "y") if target_yaxis != "y" else "y",
+                    legendgroup=title,
+                    # TRANSLUCENT BOXES
                     hoverlabel=dict(
-                        bgcolor="rgba(255, 255, 255, 0.5)", # 50% Translucent
+                        bgcolor="rgba(255, 255, 255, 0.5)", 
                         bordercolor=line_color,
-                        font=dict(family="Arial Black", size=11, color="black")
+                        font=dict(family="Arial Black", size=12, color="black")
                     ),
                     hovertemplate=f"<b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
-                )
+                ),
+                row=row_idx, col=1,
+                secondary_y=is_sec if not is_split else None
             )
 
-            # Limit Lines Restored with Text
+            # LIMIT LINES (Restored with Labels)
             if title in LIMIT_LINES:
                 for val, color, label in LIMIT_LINES[title]:
                     fig.add_trace(
                         go.Scatter(
                             x=[df["Time"].min(), df["Time"].max()], y=[val, val],
-                            yaxis=target_yaxis.replace("y", "y") if target_yaxis != "y" else "y",
                             mode='lines+text', text=[label, ""], textposition="top right",
                             line=dict(color=color, width=1, dash='dash'),
                             hoverinfo='skip', showlegend=False, visible=trace_visible
-                        )
+                        ),
+                        row=row_idx, col=1
                     )
             color_idx += 1
 
-    # --- LAYOUT LOGIC ---
-    layout_cfg = dict(
-        height=800,
+    # 2. THE FIX FOR SYNCED INTERACTION
+    fig.update_layout(
+        height=height,
         template="plotly_white",
-        hovermode="x", # Shows ALL trace boxes on the X-line
-        margin=dict(l=60, r=60, t=30, b=50),
-        
-        xaxis=dict(
-            title="Time (Seconds)",
-            showspikes=True, spikemode='across', spikesnap='cursor',
-            spikethickness=1, spikedash='dash', spikecolor='black',
-            showline=True, linewidth=1, linecolor='black', mirror=True
-        ),
-        
-        yaxis=dict(
-            title="Performance",
-            domain=[0.53, 1] if is_split else [0, 1],
-            showline=True, linecolor='black', mirror=True, zeroline=False
-        ),
-        
-        yaxis2=dict(
-            title="Systems",
-            domain=[0, 0.47] if is_split else [0, 1],
-            overlaying="y" if not is_split else None,
-            side="right" if not is_split else "left",
-            showline=True, linecolor='black', mirror=True, zeroline=False
-        )
+        hovermode="x", # Shows boxes for all active traces at that X
+        hoverdistance=-1,
+        spikedistance=-1,
+        margin=dict(l=20, r=20, t=30, b=50),
+        legend=dict(y=0.5, x=1.05)
+    )
+
+    # Spike & Axis Configuration
+    common_x = dict(
+        showspikes=True, spikemode='across', spikesnap='cursor',
+        spikethickness=2, spikedash='dash', spikecolor='black',
+        showline=True, linewidth=1, linecolor='black', mirror=True
     )
 
     if is_split:
-        # Static Divider Shape
-        layout_cfg["shapes"] = [
-            dict(type="line", xref="paper", yref="paper", x0=0, x1=1, y0=0.5, y1=0.5,
-                 line=dict(color="black", width=1))
-        ]
+        # 'matches' is the key to syncing the spikeline and hover boxes across subplots
+        fig.update_xaxes(common_x, row=1, col=1, matches='x')
+        fig.update_xaxes(common_x, row=2, col=1, title_text="<b>Time (Seconds)</b>", matches='x')
+        fig.update_yaxes(title_text="<b>Temp / Speed</b>", row=1, col=1, showline=True, linecolor='black')
+        fig.update_yaxes(title_text="<b>PSI / % / Deg</b>", row=2, col=1, showline=True, linecolor='black')
+    else:
+        fig.update_xaxes(common_x, title_text="<b>Time (Seconds)</b>")
+        fig.update_yaxes(title_text="<b>Temp / Speed</b>", secondary_y=False, showline=True, linecolor='black')
+        fig.update_yaxes(title_text="<b>PSI / % / Deg</b>", secondary_y=True, showline=True, linecolor='black')
 
-    fig.update_layout(layout_cfg)
     return fig
