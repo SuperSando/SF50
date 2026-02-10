@@ -32,15 +32,6 @@ def get_backend():
 
 repo = get_backend()
 
-# --- NEW: CACHED HISTORY FETCHING ---
-# This prevents the "No logs found" flicker during reruns
-def get_aircraft_history(repo, path):
-    try:
-        contents = repo.get_contents(path)
-        return {f.name: f for f in contents if f.name.endswith(".csv")}
-    except:
-        return {}
-
 # Initialize Session State
 for key, val in [("active_df", None), ("active_source", ""), ("uploader_key", 0), ("delete_confirm", False), ("last_profile", None)]:
     if key not in st.session_state: st.session_state[key] = val
@@ -54,14 +45,13 @@ if check_password() and repo:
         
         # Aircraft Selection
         try:
-            # We don't cache the profile list so new aircraft show up immediately
             profile_names = [c.name for c in repo.get_contents("data") if c.type == "dir"]
         except: 
             profile_names = []
 
         selected_profile = st.selectbox("Select Aircraft", ["+ Create New Profile"] + sorted(profile_names))
         
-        # --- AUTO-REFRESH LISTENER ---
+        # --- AUTO-REFRESH: If aircraft changes, clear the dashboard ---
         if selected_profile != st.session_state.last_profile:
             st.session_state.active_df = None
             st.session_state.active_source = ""
@@ -81,44 +71,46 @@ if check_password() and repo:
         view_mode = st.radio("Display Layout", ["Single View", "Split View"], index=1)
         st.divider()
 
-        # --- RE-ENGINEERED HISTORY MANAGEMENT ---
+        # --- HISTORY MANAGEMENT ---
         st.subheader("📜 History")
-        h_map = get_aircraft_history(repo, f"data/{tail_number}")
-        
-        if not h_map:
-            st.info(f"Scanning cloud for **{tail_number}**...")
-            # If the dict is empty, we force one more try to prevent the flicker bug
-            if st.button("Refresh History"):
-                st.rerun()
-        else:
-            history_list = sorted(h_map.keys(), reverse=True)
+        try:
+            h_path = f"data/{tail_number}"
+            contents = repo.get_contents(h_path)
+            h_map = {f.name: f for f in contents if f.name.endswith(".csv")}
             
-            # The key logic: Use a unique key based on the tail_number
-            sel_h = st.selectbox("Select Log", ["-- Select a File --"] + history_list, key=f"hist_{tail_number}")
-            
-            if sel_h != "-- Select a File --":
-                c1, c2 = st.columns(2)
-                if c1.button("Open", use_container_width=True, type="primary"):
-                    with st.spinner("Downloading..."):
-                        resp = requests.get(h_map[sel_h].download_url)
-                        st.session_state.active_df = pd.read_csv(io.BytesIO(resp.content))
-                        st.session_state.active_source = sel_h
-                        st.rerun()
+            if not h_map:
+                st.info("No logs found for this aircraft.")
+            else:
+                history_list = sorted(h_map.keys(), reverse=True)
                 
-                if c2.button("🗑️ Delete", use_container_width=True):
-                    st.session_state.delete_confirm = True
+                # Unique key per tail_number prevents "Index Error" when switching planes
+                sel_h = st.selectbox("Select Log", ["-- Select a File --"] + history_list, key=f"hist_{tail_number}")
+                
+                if sel_h != "-- Select a File --":
+                    c1, c2 = st.columns(2)
+                    if c1.button("Open", use_container_width=True, type="primary"):
+                        with st.spinner("Downloading..."):
+                            resp = requests.get(h_map[sel_h].download_url)
+                            st.session_state.active_df = pd.read_csv(io.BytesIO(resp.content))
+                            st.session_state.active_source = sel_h
+                            st.rerun()
+                    
+                    if c2.button("🗑️ Delete", use_container_width=True):
+                        st.session_state.delete_confirm = True
 
-                if st.session_state.delete_confirm:
-                    st.warning("Delete permanently?")
-                    if st.button("Yes, Confirm"):
-                        repo.delete_file(h_map[sel_h].path, "Del", h_map[sel_h].sha)
-                        st.session_state.active_df = None
-                        st.session_state.active_source = ""
-                        st.session_state.delete_confirm = False
-                        st.rerun()
-                    if st.button("Cancel"):
-                        st.session_state.delete_confirm = False
-                        st.rerun()
+                    if st.session_state.delete_confirm:
+                        st.warning("Delete permanently?")
+                        if st.button("Yes, Confirm"):
+                            repo.delete_file(h_map[sel_h].path, "Del", h_map[sel_h].sha)
+                            st.session_state.active_df = None
+                            st.session_state.active_source = ""
+                            st.session_state.delete_confirm = False
+                            st.rerun()
+                        if st.button("Cancel"):
+                            st.session_state.delete_confirm = False
+                            st.rerun()
+        except:
+            st.info("No logs found for this aircraft.")
 
         st.divider()
         # Batch Upload
