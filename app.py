@@ -6,7 +6,7 @@ import io
 import requests
 from github import Github 
 
-# --- AUTH ---
+# --- 1. AUTH ---
 def check_password():
     if "password_correct" not in st.session_state:
         st.set_page_config(page_title="SF50 Login", page_icon="🔒")
@@ -28,9 +28,9 @@ def get_backend():
 
 repo = get_backend()
 
-# State
-for key in ["active_df", "active_source", "uploader_key", "delete_confirm"]:
-    if key not in st.session_state: st.session_state[key] = None if "df" in key else "" if "source" in key else 0 if "key" in key else False
+# Initialize Session State
+for key, val in [("active_df", None), ("active_source", ""), ("uploader_key", 0), ("delete_confirm", False)]:
+    if key not in st.session_state: st.session_state[key] = val
 
 if check_password() and repo:
     st.set_page_config(layout="wide", page_title="Vision Jet Analytics", page_icon="✈️")
@@ -45,13 +45,13 @@ if check_password() and repo:
         
         if selected_profile == "+ Create New Profile":
             new_tail = st.text_input("Tail Number").upper().strip()
-            if st.button("Register"):
-                repo.create_file(f"data/{new_tail}/.profile", "init", "Registered")
+            if st.button("Register Aircraft"):
+                repo.create_file(f"data/{new_tail}/.profile", "init", "Profile Registered")
                 st.rerun()
             st.stop()
 
         tail_number = selected_profile
-        view_mode = st.radio("Layout", ["Single View", "Split View"], index=1)
+        view_mode = st.radio("Display Layout", ["Single View", "Split View"], index=1)
         
         st.subheader("📊 Data Selection")
         param_groups = {
@@ -65,7 +65,8 @@ if check_password() and repo:
         for g_name, items in param_groups.items():
             with st.expander(g_name, expanded=(g_name == "🚀 Powerplant")):
                 for item in items:
-                    if st.checkbox(item, value=(item in ["N2 %", "Bld Px PSI"]), key=f"s_{item}"):
+                    default_on = item in ["N2 %", "Bld Px PSI"]
+                    if st.checkbox(item, value=default_on, key=f"sb_{item}"):
                         selected_params.append(item)
 
         st.divider()
@@ -85,21 +86,21 @@ if check_password() and repo:
                     repo.delete_file(h_map[sel_h].path, "Del", h_map[sel_h].sha)
                     st.session_state.active_df = None
                     st.rerun()
-        except: st.info("No logs.")
+        except: st.info("No logs found.")
 
         st.divider()
-        up_files = st.file_uploader("Upload CSVs", type="csv", accept_multiple_files=True, key=f"u_{st.session_state.uploader_key}")
+        up_files = st.file_uploader("Upload CSVs", type="csv", accept_multiple_files=True, key=f"up_{st.session_state.uploader_key}")
         if st.button("Sync & Open", use_container_width=True):
             if up_files:
                 for f in up_files:
                     p_df = cleaner.clean_data(f)
-                    repo.create_file(f"data/{tail_number}/{f.name}", f"Add {f.name}", p_df.to_csv(index=False))
+                    repo.create_file(f"data/{tail_number}/{f.name}", f"Upload {f.name}", p_df.to_csv(index=False))
                     st.session_state.active_df = p_df
                     st.session_state.active_source = f.name
                 st.session_state.uploader_key += 1
                 st.rerun()
 
-    # --- RENDER ---
+    # --- MAIN DISPLAY ---
     df = st.session_state.active_df
     if df is not None:
         st.title(f"✈️ {tail_number} Analysis")
@@ -112,4 +113,4 @@ if check_password() and repo:
         
         st.plotly_chart(visualizer.generate_dashboard(df, view_mode=view_mode, active_list=selected_params), use_container_width=True)
     else:
-        st.info("👈 Open a log to begin.")
+        st.info("👈 Open a log from history or upload a new one.")
