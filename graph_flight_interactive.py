@@ -2,7 +2,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# --- 1. CONFIGURATION (MUST BE AT THE TOP) ---
+# --- 1. CONFIGURATION ---
 GRAPH_MAPPINGS = {
     "Groundspeed": "Groundspeed", "Cabin Diff PSI": "Cabin Diff PSI", 
     "Bld Px PSI": "Bld Px PSI", "Bleed On": "Bleed On", "N1 %": "N1 %", 
@@ -24,31 +24,29 @@ UNITS = {
     "EIPS PRS PSI": "psi"
 }
 
-# Mapping for the Split View: 1 = Top Pane, 2 = Bottom Pane
 PANE_MAP = {
     "kts": 1, "°F": 1, "°C": 1, 
     "psi": 2, "%": 2, "°": 2, "1=ON": 2, "1=OPEN": 2, "V": 2 
 }
 
+# --- RESTORED ALL LIMIT LINES ---
 LIMIT_LINES = {
     "ITT (F)": [(1610, "red", "Max T/O 10sec"), (1583, "orange", "Max T/O 5mins"), (1536, "green", "MCT")], 
-    "N1 %": [(105.7, "red", "Limit"), (104.7, "green", "MCT")],
+    "N1 %": [(105.7, "red", "Tran. 30sec"), (104.7, "green", "MCT")], 
+    "N2 %": [(101, "red", "Tran. 30sec"), (100, "green", "MCT")], 
     "Oil Px PSI": [(120, "green", "max")]
 }
 
-# --- 2. THE GENERATOR FUNCTION ---
 def generate_dashboard(df, view_mode="Single View"):
-    # Ensure Time is numeric
     if "Time" in df.columns:
          df["Time"] = pd.to_numeric(df["Time"], errors='coerce')
 
-    # Setup Subplot Structure based on view_mode
     if "Split View" in view_mode:
         fig = make_subplots(
             rows=2, cols=1, 
             shared_xaxes=True, 
             vertical_spacing=0.08,
-            subplot_titles=("<b>ENGINE PERFORMANCE & ENVIRONMENT</b>", "<b>SYSTEMS HEALTH & LOGIC</b>")
+            subplot_titles=("<b>PERFORMANCE & ENVIRONMENT</b>", "<b>SYSTEMS HEALTH & LOGIC</b>")
         )
         height = 950
     else:
@@ -58,7 +56,6 @@ def generate_dashboard(df, view_mode="Single View"):
     colors = ['#2E5BFF', '#FF1744', '#00E676', '#D500F9', '#FF9100', '#00B0FF', '#FFEA00', '#1DE9B6']
     color_idx = 0
 
-    # Loop through mappings
     for title, col_name in GRAPH_MAPPINGS.items():
         if col_name in df.columns:
             df[col_name] = pd.to_numeric(df[col_name], errors='coerce')
@@ -66,13 +63,11 @@ def generate_dashboard(df, view_mode="Single View"):
             line_color = colors[color_idx % len(colors)]
             trace_visible = True if title in ["ITT (F)", "N1 %", "Groundspeed"] else 'legendonly'
 
-            # Logic for Row and Axis assignment
             if "Split View" in view_mode:
                 row_idx, sec_y = PANE_MAP.get(unit, 2), False
             else:
                 row_idx, sec_y = 1, (unit in ["psi", "%", "°", "1=ON", "1=OPEN", "V"])
 
-            # Add the trace
             fig.add_trace(
                 go.Scatter(
                     x=df["Time"], y=df[col_name], name=title, mode='lines', 
@@ -83,7 +78,6 @@ def generate_dashboard(df, view_mode="Single View"):
                 row=row_idx, col=1, secondary_y=sec_y if "Split" not in view_mode else None
             )
 
-            # Add Limit Lines with Labels
             if title in LIMIT_LINES:
                 for val, color, label in LIMIT_LINES[title]:
                     fig.add_trace(
@@ -98,7 +92,6 @@ def generate_dashboard(df, view_mode="Single View"):
                     )
             color_idx += 1
 
-    # Shared Layout Styling
     fig.update_layout(
         height=height, template="plotly_white", hovermode="x unified",
         hoverdistance=-1, 
@@ -108,14 +101,12 @@ def generate_dashboard(df, view_mode="Single View"):
         margin=dict(l=20, r=20, t=60, b=20)
     )
 
-    # Vertical dash strike-line settings
     spike_style = dict(
         showspikes=True, spikemode='across', spikesnap='cursor', 
         spikethickness=2, spikedash='dash', spikecolor='#555555',
         showline=True, linewidth=1, linecolor='black', mirror=True, gridcolor='#F0F2F6'
     )
 
-    # Apply axis formatting based on view mode
     if "Split View" in view_mode:
         fig.update_xaxes(spike_style, row=1, col=1)
         fig.update_xaxes(spike_style, row=2, col=1, title_text="<b>Time (Seconds)</b>")
