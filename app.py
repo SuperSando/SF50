@@ -9,6 +9,7 @@ from github import Github
 # --- 1. AUTHENTICATION & CONNECTION ---
 def check_password():
     if "password_correct" not in st.session_state:
+        st.set_page_config(page_title="SF50 Login", page_icon="🔒")
         st.title("🔒 SF50 Data Access")
         st.text_input("Enter Dashboard Password", type="password", key="password_input")
         if st.button("Log In"):
@@ -46,6 +47,7 @@ if check_password() and repo:
     with st.sidebar:
         st.title("🚀 SF50 Fleet Control")
         
+        # Aircraft Selection
         try:
             contents = repo.get_contents("data")
             profile_names = [c.name for c in contents if c.type == "dir"]
@@ -55,16 +57,43 @@ if check_password() and repo:
         selected_profile = st.selectbox("Select Aircraft", ["+ Create New Profile"] + sorted(profile_names))
         
         if selected_profile == "+ Create New Profile":
-            # ... Registration logic ...
+            st.subheader("🆕 Register New Aircraft")
+            new_tail = st.text_input("Tail Number", placeholder="N123SF").upper().strip()
+            new_sn = st.text_input("Aircraft S/N", placeholder="e.g. 1234")
+            if st.button("Register Aircraft", use_container_width=True, type="primary"):
+                if new_tail:
+                    repo.create_file(f"data/{new_tail}/.profile", f"Init {new_tail}", f"S/N: {new_sn}")
+                    st.success(f"Profile {new_tail} Created!")
+                    st.rerun()
             st.stop()
 
         tail_number = selected_profile
         st.success(f"Active Tail: **{tail_number}**")
         
+        # Display Mode
         view_mode = st.radio("Dashboard Layout", ["Single View", "Split View"], index=1)
         st.divider()
 
-        # --- HISTORY LOGIC (Remains hardened with requests download) ---
+        # --- PARAMETER SELECTION (New Grouped Logic) ---
+        st.subheader("📊 Data Selection")
+        param_groups = {
+            "🚀 Powerplant": ["N1 %", "N2 %", "ITT (F)", "Oil Temp (F)", "Oil Px PSI", "TLA DEG"],
+            "🌬️ Environmental": ["Cabin Diff PSI", "Bld Px PSI", "Bleed On", "ECS PRI DUCT T (F)", "ECS PRI DUCT T2 (F)", "ECS CKPT T (F)"],
+            "🛡️ Ice & Air": ["EIPS TMP (F)", "EIPS PRS PSI", "TT2 (C)", "PT2 PSI"],
+            "⚙️ Misc": ["O2 BTL Px PSI", "O2 VLV Open", "CHPV", "Groundspeed"]
+        }
+
+        selected_params = []
+        for g_name, items in param_groups.items():
+            with st.expander(g_name, expanded=(g_name == "🚀 Powerplant")):
+                for item in items:
+                    # Set defaults for initial view
+                    is_default = item in ["N2 %", "Bld Px PSI"]
+                    if st.checkbox(item, value=is_default, key=f"sidebar_{item}"):
+                        selected_params.append(item)
+        st.divider()
+
+        # --- HISTORY & DELETE ---
         st.subheader("📜 Flight History")
         try:
             history_path = f"data/{tail_number}"
@@ -78,16 +107,17 @@ if check_password() and repo:
                 selected_history = st.selectbox("Select Log", ["-- Select a File --"] + history_list)
                 
                 if selected_history != "-- Select a File --":
-                    col1, col2 = st.columns(2)
-                    if col1.button("Open", use_container_width=True, type="primary"):
-                        with st.spinner("Downloading..."):
+                    h_col1, h_col2 = st.columns(2)
+                    
+                    if h_col1.button("Open", use_container_width=True, type="primary"):
+                        with st.spinner("Streaming data..."):
                             file_obj = history_map[selected_history]
                             response = requests.get(file_obj.download_url)
                             st.session_state.active_df = pd.read_csv(io.BytesIO(response.content))
                             st.session_state.active_source = selected_history
                             st.rerun()
 
-                    if col2.button("🗑️ Delete", use_container_width=True):
+                    if h_col2.button("🗑️ Delete", use_container_width=True):
                         st.session_state.delete_confirm = True
 
                     if st.session_state.delete_confirm:
@@ -103,49 +133,43 @@ if check_password() and repo:
                             st.session_state.delete_confirm = False
                             st.rerun()
         except Exception:
-            st.info("Log directory empty.")
+            st.info("Directory empty.")
 
         st.divider()
-        # --- BATCH UPLOAD LOGIC ---
+        # --- BATCH UPLOAD ---
         st.subheader("📤 Batch Upload")
         uploaded_files = st.file_uploader(
-            "Drop multiple CSVs", 
+            "Select CSVs", 
             type="csv", 
-            accept_multiple_files=True, # FIXED: Multiple files allowed
+            accept_multiple_files=True,
             key=f"up_{st.session_state.uploader_key}"
         )
         
         if st.button("Sync & Open Newest", use_container_width=True):
             if uploaded_files:
-                # Sort files by name (assuming YYYY-MM-DD format from the Garmin logs)
                 sorted_files = sorted(uploaded_files, key=lambda x: x.name, reverse=True)
                 newest_file = sorted_files[0]
                 
                 with st.spinner(f"Syncing {len(uploaded_files)} logs..."):
                     for uploaded_file in uploaded_files:
                         try:
-                            processed_df = cleaner.clean_data(uploaded_file)
-                            file_path = f"data/{tail_number}/{uploaded_file.name}"
-                            
-                            # Check if file exists to avoid erroring the whole batch
+                            p_df = cleaner.clean_data(uploaded_file)
+                            f_path = f"data/{tail_number}/{uploaded_file.name}"
                             try:
-                                repo.get_contents(file_path)
+                                repo.get_contents(f_path)
                             except:
-                                repo.create_file(file_path, f"Batch Add: {uploaded_file.name}", processed_df.to_csv(index=False))
+                                repo.create_file(f_path, f"Batch Add: {uploaded_file.name}", p_df.to_csv(index=False))
                             
-                            # If this is the newest file, set it as active
                             if uploaded_file.name == newest_file.name:
-                                st.session_state.active_df = processed_df
+                                st.session_state.active_df = p_df
                                 st.session_state.active_source = uploaded_file.name
-                        
                         except Exception as e:
                             st.error(f"Error with {uploaded_file.name}: {e}")
                 
                 st.session_state.uploader_key += 1
-                st.success(f"Uploaded {len(uploaded_files)} files. Opening newest.")
                 st.rerun()
 
-    # --- 3. DASHBOARD ---
+    # --- 3. DASHBOARD RENDER ---
     df = st.session_state.active_df
     if df is not None:
         st.title(f"✈️ {tail_number} Analysis")
@@ -157,6 +181,10 @@ if check_password() and repo:
         m[2].metric("Max N1", f"{df['N1 %'].max():.1f}%")
         m[3].metric("Duration", f"{(len(df) / 60):.1f} min")
         
-        st.plotly_chart(visualizer.generate_dashboard(df, view_mode=view_mode), use_container_width=True)
+        # RENDER WITH ACTIVE LIST
+        st.plotly_chart(
+            visualizer.generate_dashboard(df, view_mode=view_mode, active_list=selected_params), 
+            use_container_width=True
+        )
     else:
-        st.info("👈 Use the sidebar to open or upload data.")
+        st.info("👈 Select a flight log and click **Open** to begin.")
