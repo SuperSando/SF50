@@ -26,7 +26,8 @@ UNITS = {
     "EIPS PRS PSI": "psi"
 }
 
-AXIS_MAP = {
+# False = Top Pane (Performance), True = Bottom Pane (Systems)
+PANE_MAP = {
     "kts": False, "°F": False, "°C": False, 
     "psi": True, "%": True, "°": True, "1=ON": True, "1=OPEN": True, "V": True 
 }
@@ -42,9 +43,14 @@ def generate_dashboard(df):
     if "Time" in df.columns:
          df["Time"] = pd.to_numeric(df["Time"], errors='coerce')
     
-    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    # Create 2 Rows, Shared X-Axis
+    fig = make_subplots(
+        rows=2, cols=1, 
+        shared_xaxes=True, 
+        vertical_spacing=0.05,
+        subplot_titles=("<b>PERFORMANCE & ENVIRONMENT</b>", "<b>SYSTEMS & LOGIC</b>")
+    )
     
-    # High-contrast modern palette
     colors = ['#2E5BFF', '#FF1744', '#00E676', '#D500F9', '#FF9100', '#00B0FF', '#FFEA00', '#1DE9B6']
     color_idx = 0
 
@@ -52,11 +58,14 @@ def generate_dashboard(df):
         if col_name in df.columns:
             df[col_name] = pd.to_numeric(df[col_name], errors='coerce')
             unit = UNITS.get(title, "") 
-            use_secondary = AXIS_MAP.get(unit, False)
+            
+            # Determine Row (Pane)
+            row_idx = 2 if PANE_MAP.get(unit, False) else 1
+            
             line_color = colors[color_idx % len(colors)]
             trace_visible = True if title in DEFAULT_VISIBLE else 'legendonly'
 
-            # 1. Main Trace (Slightly thicker for modern feel)
+            # 1. Main Trace
             fig.add_trace(
                 go.Scatter(
                     x=df["Time"], y=df[col_name], 
@@ -67,17 +76,17 @@ def generate_dashboard(df):
                     line=dict(color=line_color, width=2.5),
                     hovertemplate=f"<b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
                 ),
-                secondary_y=use_secondary, 
+                row=row_idx, col=1
             )
 
-            # 2. RESTORED: Limit Lines with visible Text Labels
+            # 2. Limit Lines
             if title in LIMIT_LINES:
                 for val, color, label in LIMIT_LINES[title]:
                     fig.add_trace(
                         go.Scatter(
                             x=[df["Time"].min(), df["Time"].max()], 
                             y=[val, val],
-                            mode='lines+text', # Restoration of the labels
+                            mode='lines+text', 
                             text=[label, ""], 
                             textposition="top right",
                             line=dict(color=color, width=1, dash='dash'),
@@ -87,48 +96,40 @@ def generate_dashboard(df):
                             visible=trace_visible, 
                             hoverinfo='skip'
                         ),
-                        secondary_y=use_secondary 
+                        row=row_idx, col=1
                     )
             color_idx += 1
 
     fig.update_layout(
-        height=800,
+        height=1000, # Increased height to accommodate two panes
         template="plotly_white",
         hovermode="x unified",
-        hoverdistance=-1,
-        hoverlabel=dict(
-            bgcolor="rgba(255, 255, 255, 0.95)",
-            font_size=14,
-            font_family="Arial Black",
-            font_color="black"
-        ),
+        hoverlabel=dict(bgcolor="rgba(255, 255, 255, 0.95)", font_size=14, font_family="Arial Black"),
         plot_bgcolor="white",
         paper_bgcolor="white",
         font=dict(color="black"),
-        legend=dict(title="<b>Parameters:</b>", y=0.99, x=1.05),
-        margin=dict(l=20, r=20, t=40, b=20)
+        legend=dict(title="<b>Parameters:</b>", y=0.5, x=1.05, yanchor="middle"),
+        margin=dict(l=50, r=50, t=80, b=50)
     )
 
-    # RESTORED: Original Axis Titles & Dashed Vertical Strike-Line
+    # shared X-Axis formatting
     fig.update_xaxes(
-        title_text="<b>Time (Seconds)</b>",
+        title_text="<b>Time (Seconds)</b>", row=2, col=1,
         showgrid=True, gridcolor='#F0F2F6',
         showspikes=True, spikemode='across', spikesnap='cursor', 
         spikethickness=2, spikedash='dash', spikecolor='#555555',
         showline=True, linewidth=1, linecolor='black', mirror=True
     )
-
-    fig.update_yaxes(
-        title_text="<b>Temp (°F/°C) / Speed (kts)</b>",
-        secondary_y=False,
-        showgrid=True, gridcolor='#F0F2F6',
-        showline=True, linewidth=1, linecolor='black', mirror=True, zeroline=False
+    
+    # Ensure strike line cuts through both even when hovering top graph
+    fig.update_xaxes(
+        row=1, col=1, 
+        showspikes=True, spikemode='across', spikesnap='cursor', 
+        spikethickness=2, spikedash='dash', spikecolor='#555555'
     )
 
-    fig.update_yaxes(
-        title_text="<b>PSI / % / Degree (°)</b>",
-        secondary_y=True,
-        showline=True, linewidth=1, linecolor='black', mirror=True, zeroline=False
-    )
+    # Y-Axes
+    fig.update_yaxes(title_text="<b>Temp / Speed</b>", row=1, col=1, gridcolor='#F0F2F6', zeroline=False)
+    fig.update_yaxes(title_text="<b>PSI / % / Deg</b>", row=2, col=1, gridcolor='#F0F2F6', zeroline=False)
 
     return fig
