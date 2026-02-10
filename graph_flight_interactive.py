@@ -51,10 +51,10 @@ def generate_dashboard(df, view_mode="Single View"):
         if col_name in df.columns:
             unit = UNITS.get(title, "")
             line_color = colors[color_idx % len(colors)]
-            # Visibility logic: Default ITT, N1, and GS to visible
             trace_visible = True if title in ["ITT (F)", "N1 %", "Groundspeed"] else 'legendonly'
 
-            row_idx = 1 if unit in ["kts", "°F", "°C"] else (2 if is_split else 1)
+            row_idx = 1 if unit in ["kts", "°F", "°C"] else 2
+            if not is_split: row_idx = 1
             is_sec = False if unit in ["kts", "°F", "°C"] else True
 
             # DATA TRACE
@@ -63,19 +63,19 @@ def generate_dashboard(df, view_mode="Single View"):
                     x=df["Time"], y=df[col_name], name=title, mode='lines',
                     line=dict(color=line_color, width=2.5),
                     visible=trace_visible,
-                    legendgroup=title, # Link to legend group
+                    legendgroup=title,
                     hoverlabel=dict(
-                        bgcolor="rgba(255, 255, 255, 0.4)", # Deep translucency (60% transparent)
+                        bgcolor="rgba(255, 255, 255, 0.5)", 
                         bordercolor=line_color,
                         font=dict(family="Arial Black", size=12, color="black")
                     ),
                     hovertemplate=f"<b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
                 ),
-                row=row_idx, col=1,
+                row=row_idx if is_split else 1, col=1,
                 secondary_y=is_sec if not is_split else None
             )
 
-            # LIMIT LINES (Linked to the Parent Trace)
+            # LIMIT LINES (Restored Visibility Logic)
             if title in LIMIT_LINES:
                 for val, color, label in LIMIT_LINES[title]:
                     fig.add_trace(
@@ -83,16 +83,16 @@ def generate_dashboard(df, view_mode="Single View"):
                             x=[df["Time"].min(), df["Time"].max()], y=[val, val],
                             mode='lines+text', text=[label, ""], textposition="top right",
                             line=dict(color=color, width=1, dash='dash'),
-                            hoverinfo='skip', 
-                            showlegend=False, 
-                            visible=trace_visible, # LINKED VISIBILITY
-                            legendgroup=title      # LINKED TO LEGEND TOGGLE
+                            hoverinfo='skip', showlegend=False, 
+                            visible=trace_visible,
+                            legendgroup=title
                         ),
-                        row=row_idx, col=1
+                        row=row_idx if is_split else 1, col=1,
+                        secondary_y=is_sec if not is_split else None
                     )
             color_idx += 1
 
-    # --- SHARED SPIKE & INTERACTION ---
+    # --- LAYOUT ---
     fig.update_layout(
         height=height,
         template="plotly_white",
