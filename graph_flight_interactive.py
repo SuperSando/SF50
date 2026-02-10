@@ -44,8 +44,8 @@ def generate_dashboard(df, view_mode="Single View"):
         fig = make_subplots(
             rows=2, cols=1, 
             shared_xaxes=True, 
-            vertical_spacing=0.04, # Tightened since titles are gone
-            subplot_titles=(None, None) # TITLES REMOVED
+            vertical_spacing=0.04,
+            subplot_titles=(None, None) 
         )
         height = 950
     else:
@@ -97,16 +97,22 @@ def generate_dashboard(df, view_mode="Single View"):
         hoverlabel=dict(bgcolor="white", font_size=14, font_family="Arial Black", font_color="black"),
         plot_bgcolor="white", paper_bgcolor="white", font=dict(color="black"),
         legend=dict(title="<b>Parameters:</b>", y=0.5, x=1.05, yanchor="middle"),
-        margin=dict(l=20, r=20, t=40, b=20) # Slightly smaller top margin
+        margin=dict(l=20, r=20, t=40, b=20)
     )
 
+    # --- CROSS-SUBPLOT SPIKE LOGIC ---
     spike_style = dict(
-        showspikes=True, spikemode='across', spikesnap='cursor', 
-        spikethickness=2, spikedash='dash', spikecolor='#555555',
+        showspikes=True, 
+        spikemode='across', # Forces the line to travel across all subplots
+        spikesnap='cursor', # Follows mouse, not data points
+        spikethickness=2, 
+        spikedash='dash', 
+        spikecolor='#555555',
         showline=True, linewidth=1, linecolor='black', mirror=True, gridcolor='#F0F2F6'
     )
 
     if "Split View" in view_mode:
+        # Applying the spike to both X-axes ensures it is visible in both panes
         fig.update_xaxes(spike_style, row=1, col=1)
         fig.update_xaxes(spike_style, row=2, col=1, title_text="<b>Time (Seconds)</b>")
         fig.update_yaxes(title_text="<b>Temp / Speed</b>", row=1, col=1, gridcolor='#F0F2F6', zeroline=False)
