@@ -46,7 +46,6 @@ def generate_dashboard(df, view_mode="Single View"):
             line_color = colors[color_idx % len(colors)]
             trace_visible = True if title in ["ITT (F)", "N1 %", "Groundspeed"] else 'legendonly'
 
-            # Logic: Performance/Speed -> Y-axis 1, Systems/Logic -> Y-axis 2
             if is_split:
                 target_yaxis = "y2" if unit in ["psi", "%", "°", "1=ON", "1=OPEN", "V"] else "y"
             else:
@@ -76,7 +75,7 @@ def generate_dashboard(df, view_mode="Single View"):
                     )
             color_idx += 1
 
-    # --- THE LAYOUT GEOMETRY ---
+    # --- LAYOUT & SHAPES ---
     layout_config = dict(
         height=800,
         template="plotly_white",
@@ -88,19 +87,17 @@ def generate_dashboard(df, view_mode="Single View"):
         legend=dict(title="<b>Parameters:</b>", y=0.5, x=1.05, yanchor="middle"),
         margin=dict(l=20, r=20, t=30, b=60),
         
-        # X-AXIS: Forced to the bottom
         xaxis=dict(
             title_text="<b>Time (Seconds)</b>",
             side="bottom",
-            anchor="free",  # Free it from Y1
-            position=0,     # Place it at the absolute bottom
+            anchor="free",
+            position=0,
             showgrid=True, gridcolor='#F0F2F6',
             showspikes=True, spikemode='across', spikesnap='cursor',
             spikethickness=2, spikedash='dash', spikecolor='#555555',
             showline=True, linewidth=1, linecolor='black', mirror=True
         ),
         
-        # Y-AXIS 1: Performance (Top)
         yaxis=dict(
             title_text="<b>Temp / Speed</b>",
             domain=[0.53, 1] if is_split else [0, 1],
@@ -109,7 +106,6 @@ def generate_dashboard(df, view_mode="Single View"):
     )
 
     if is_split:
-        # Y-AXIS 2: Systems (Bottom)
         layout_config["yaxis2"] = dict(
             title_text="<b>PSI / % / Deg</b>",
             domain=[0, 0.47],
@@ -117,8 +113,18 @@ def generate_dashboard(df, view_mode="Single View"):
             anchor="free",
             position=0
         )
+        
+        # --- NEW: THE HORIZONTAL DIVIDER LINE ---
+        layout_config["shapes"] = [
+            dict(
+                type="line",
+                xref="paper", yref="paper",
+                x0=0, x1=1,
+                y0=0.5, y1=0.5, # Position exactly in the vertical middle
+                line=dict(color="black", width=2)
+            )
+        ]
     else:
-        # SINGLE VIEW: Secondary scale on right
         layout_config["yaxis2"] = dict(
             title_text="<b>PSI / % / Deg</b>",
             overlaying="y",
