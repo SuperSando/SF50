@@ -35,6 +35,11 @@ def generate_dashboard(df_input, view_mode="Split View"):
     df = df_input.copy()
     if "Time" in df.columns:
         df["Time"] = pd.to_numeric(df["Time"], errors='coerce')
+        # Create MM:SS formatted time for the hover labels
+        df["Time_MMSS"] = df["Time"].apply(lambda s: f"{int(s//60):02d}:{int(s%60):02d}" if pd.notnull(s) else "00:00")
+    else:
+        df["Time"] = range(len(df))
+        df["Time_MMSS"] = [f"{int(s//60):02d}:{int(s%60):02d}" for s in df["Time"]]
 
     is_split = "Split View" in view_mode
     
@@ -59,20 +64,24 @@ def generate_dashboard(df_input, view_mode="Split View"):
             row = 1 if (is_perf or not is_split) else 2
             sec_y = (not is_perf) if not is_split else False
 
-            # Trace
+            # Add Data
             fig.add_trace(
                 go.Scatter(
-                    x=df["Time"], y=data, name=title, mode='lines',
+                    x=df["Time"], 
+                    y=data, 
+                    name=title, 
+                    mode='lines',
                     line=dict(color=line_color, width=3),
                     visible=is_visible,
                     legendgroup=title,
-                    # THE FIX: Added %{x} to include the timestamp in the box
-                    hovertemplate=f"<b>Time: %{{x}}s</b><br><b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
+                    # Customdata allows us to pass the MM:SS string to the hover box
+                    customdata=df["Time_MMSS"],
+                    hovertemplate=f"<b>Time: %{{customdata}}</b><br><b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
                 ),
                 row=row, col=1, secondary_y=sec_y
             )
 
-            # Limits
+            # Add Limits
             if title in LIMIT_LINES:
                 for l_val, l_color, l_label in LIMIT_LINES[title]:
                     fig.add_trace(
