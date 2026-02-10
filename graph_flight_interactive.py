@@ -41,95 +41,101 @@ def generate_dashboard(df, view_mode="Single View"):
 
     for title, col_name in GRAPH_MAPPINGS.items():
         if col_name in df.columns:
-            df[col_name] = pd.to_numeric(df[col_name], errors='coerce')
+            data = pd.to_numeric(df[col_name], errors='coerce')
             unit = UNITS.get(title, "") 
             line_color = colors[color_idx % len(colors)]
             trace_visible = True if title in ["ITT (F)", "N1 %", "Groundspeed"] else 'legendonly'
 
-            # Logic for axis assignment
-            if is_split:
-                target_yaxis = "y2" if unit in ["psi", "%", "°", "1=ON", "1=OPEN", "V"] else "y"
-            else:
-                target_yaxis = "y" if unit in ["kts", "°F", "°C"] else "y2"
-
-            # --- DATA TRACES (The Floating Boxes) ---
+            # --- PLOTTING LOGIC ---
             fig.add_trace(
                 go.Scatter(
-                    x=df["Time"], y=df[col_name], name=title, mode='lines', 
-                    visible=trace_visible, legendgroup=title,
-                    yaxis=target_yaxis.replace("y", "y") if target_yaxis != "y" else "y",
-                    line=dict(color=line_color, width=2.5),
-                    # Individual trace hover labels
+                    x=df["Time"], 
+                    y=data, 
+                    name=title, 
+                    mode='lines', 
+                    visible=trace_visible, 
+                    legendgroup=title,
+                    # We use yaxis2 for Systems in both modes for consistency
+                    yaxis="y" if unit in ["kts", "°F", "°C"] else "y2",
+                    line=dict(color=line_color, width=2),
                     hoverlabel=dict(
-                        bgcolor="rgba(255, 255, 255, 0.75)", # Translucent white
+                        bgcolor="rgba(255, 255, 255, 0.7)", 
                         bordercolor=line_color,
-                        font_size=13, font_family="Arial Black", font_color="black"
+                        font_size=12,
+                        font_family="Arial Black"
                     ),
                     hovertemplate=f"<b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
                 )
             )
 
-            # --- RESTORED LIMIT LINES (With Text Labels) ---
+            # --- LIMIT LINES ---
             if title in LIMIT_LINES:
                 for val, color, label in LIMIT_LINES[title]:
                     fig.add_trace(
                         go.Scatter(
                             x=[df["Time"].min(), df["Time"].max()], y=[val, val],
-                            yaxis=target_yaxis.replace("y", "y") if target_yaxis != "y" else "y",
-                            mode='lines+text', # Restoration of text
-                            text=[label, ""], textposition="top right",
+                            yaxis="y" if unit in ["kts", "°F", "°C"] else "y2",
+                            mode='lines+text',
+                            text=[label, ""],
+                            textposition="top right",
                             line=dict(color=color, width=1, dash='dash'),
-                            name=label, legendgroup=title, showlegend=False, 
-                            visible=trace_visible, hoverinfo='skip' # Skip hover for limits
+                            hoverinfo='skip',
+                            showlegend=False,
+                            visible=trace_visible
                         )
                     )
             color_idx += 1
 
-    # --- LAYOUT CONFIGURATION ---
-    layout_config = dict(
+    # --- LAYOUT FIX ---
+    layout_cfg = dict(
         height=800,
         template="plotly_white",
-        hovermode="x", # Shows ALL boxes on the X line across both panes
+        hovermode="x",  # Force all boxes on the X-line to show
         hoverdistance=-1,
         spikedistance=-1,
-        plot_bgcolor="white", paper_bgcolor="white", font=dict(color="black"),
-        legend=dict(title="<b>Parameters:</b>", y=0.5, x=1.05, yanchor="middle"),
-        margin=dict(l=20, r=20, t=30, b=60),
+        margin=dict(l=50, r=50, t=30, b=50),
+        legend=dict(y=0.5, x=1.1),
         
         xaxis=dict(
-            title_text="<b>Time (Seconds)</b>",
-            side="bottom", anchor="free", position=0,
-            showgrid=True, gridcolor='#F0F2F6',
-            showspikes=True, spikemode='across', spikesnap='cursor',
-            spikethickness=2, spikedash='dash', spikecolor='#555555',
-            showline=True, linewidth=1, linecolor='black', mirror=True
+            title="Time (Seconds)",
+            showspikes=True,
+            spikemode="across",
+            spikesnap="cursor",
+            spikethickness=1,
+            spikedash="dash",
+            spikecolor="#999",
+            showline=True,
+            linecolor="black",
+            mirror=True
         ),
         
+        # Upper Plot
         yaxis=dict(
-            title_text="<b>Temp / Speed</b>",
-            domain=[0.53, 1] if is_split else [0, 1],
-            gridcolor='#F0F2F6', zeroline=False, showline=True, linecolor='black', mirror=True
+            title="Performance",
+            domain=[0.55, 1] if is_split else [0, 1],
+            showline=True,
+            linecolor="black",
+            mirror=True,
+            zeroline=False
+        ),
+        
+        # Lower Plot
+        yaxis2=dict(
+            title="Systems",
+            domain=[0, 0.45] if is_split else [0, 1],
+            overlaying="y" if not is_split else None,
+            side="right" if not is_split else "left",
+            showline=True,
+            linecolor="black",
+            mirror=True,
+            zeroline=False
         )
     )
 
     if is_split:
-        layout_config["yaxis2"] = dict(
-            title_text="<b>PSI / % / Deg</b>",
-            domain=[0, 0.47],
-            gridcolor='#F0F2F6', zeroline=False, showline=True, linecolor='black', mirror=True,
-            anchor="free", position=0
-        )
-        # DIVIDER LINE
-        layout_config["shapes"] = [
-            dict(type="line", xref="paper", yref="paper", x0=0, x1=1, y0=0.5, y1=0.5,
-                 line=dict(color="black", width=1))
+        layout_cfg["shapes"] = [
+            dict(type="line", xref="paper", yref="paper", x0=0, x1=1, y0=0.5, y1=0.5, line=dict(color="black", width=1))
         ]
-    else:
-        layout_config["yaxis2"] = dict(
-            title_text="<b>PSI / % / Deg</b>",
-            overlaying="y", side="right",
-            zeroline=False, showline=True, linecolor='black'
-        )
 
-    fig.update_layout(layout_config)
+    fig.update_layout(layout_cfg)
     return fig
