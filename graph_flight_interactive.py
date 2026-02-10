@@ -2,7 +2,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# --- 1. SYSTEM HIERARCHY & COLOR PALETTES ---
+# --- 1. SYSTEM HIERARCHY ---
 GROUPS = {
     "Powerplant": {"color": "#D32F2F", "items": ["N1 %", "N2 %", "ITT (F)", "Oil Temp (F)", "Oil Px PSI", "TLA DEG"]},
     "Environmental": {"color": "#1976D2", "items": ["Cabin Diff PSI", "Bld Px PSI", "Bleed On", "ECS PRI DUCT T (F)", "ECS PRI DUCT T2 (F)", "ECS CKPT T (F)"]},
@@ -28,17 +28,17 @@ LIMIT_LINES = {
 }
 
 def generate_dashboard(df_input, view_mode="Split View", active_list=None):
-    # Fix the 'assignment on slice' bug
     df = df_input.copy()
-    
     if "Time" in df.columns:
         df["Time"] = pd.to_numeric(df["Time"], errors='coerce')
     else:
         df["Time"] = range(len(df))
 
     is_split = "Split View" in view_mode
+    
+    # Create the figure with correct spec for secondary Y
     if is_split:
-        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03)
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05)
     else:
         fig = make_subplots(rows=1, cols=1, specs=[[{"secondary_y": True}]])
 
@@ -49,26 +49,26 @@ def generate_dashboard(df_input, view_mode="Split View", active_list=None):
                 val = pd.to_numeric(df[title], errors='coerce')
                 unit = UNITS.get(title, "")
                 
-                # Determine which pane and axis to use
-                row_idx = 1 if unit in ["kts", "°F", "°C"] else 2
-                if not is_split: row_idx = 1
-                is_sec = False if unit in ["kts", "°F", "°C"] else True
+                # Logic: Row 1 is Performance/Engine. Row 2 is Systems.
+                # In Single View, everything is Row 1, but Systems go to Secondary Y.
+                is_engine_param = unit in ["kts", "°F", "°C"]
+                
+                row = 1 if (is_engine_param or not is_split) else 2
+                sec_y = (not is_engine_param) if not is_split else False
 
-                # Main Data Trace
+                # Trace
                 fig.add_trace(
                     go.Scatter(
                         x=df["Time"], y=val, name=title, mode='lines',
                         line=dict(color=base_color, width=2, dash=None if i < 3 else 'dot'),
                         legendgroup=g_name,
                         legendgrouptitle_text=g_name if i == 0 else None,
-                        hoverlabel=dict(bgcolor="rgba(255,255,255,0.5)", bordercolor=base_color),
                         hovertemplate=f"<b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
                     ),
-                    row=row_idx, col=1,
-                    secondary_y=is_sec if not is_split else None
+                    row=row, col=1, secondary_y=sec_y
                 )
 
-                # Anchored Limit Lines
+                # Limits
                 if title in LIMIT_LINES:
                     for l_val, l_color, l_label in LIMIT_LINES[title]:
                         fig.add_trace(
@@ -78,28 +78,27 @@ def generate_dashboard(df_input, view_mode="Split View", active_list=None):
                                 line=dict(color=l_color, width=1.5, dash='dash'),
                                 hoverinfo='skip', showlegend=False, legendgroup=g_name
                             ),
-                            row=row_idx, col=1,
-                            secondary_y=is_sec if not is_split else None
+                            row=row, col=1, secondary_y=sec_y
                         )
 
     fig.update_layout(
         height=850, template="plotly_white", hovermode="x",
         margin=dict(l=20, r=20, t=30, b=50),
-        legend=dict(groupclick="toggleitem", orientation="v", y=0.5, x=1.02)
+        legend=dict(groupclick="toggleitem", y=0.5, x=1.05)
     )
 
     common_x = dict(showspikes=True, spikemode='across', spikesnap='cursor',
                     spikethickness=2, spikedash='dash', spikecolor='black',
-                    showline=True, linewidth=1, linecolor='black', mirror=True)
+                    showline=True, linecolor='black', mirror=True)
 
     if is_split:
         fig.update_xaxes(common_x, row=1, col=1, matches='x')
         fig.update_xaxes(common_x, row=2, col=1, title_text="Time (Seconds)", matches='x')
-        fig.update_yaxes(title_text="Temp / Speed", row=1, col=1)
-        fig.update_yaxes(title_text="PSI / % / Deg", row=2, col=1)
+        fig.update_yaxes(title_text="<b>Engine / Perf</b>", row=1, col=1)
+        fig.update_yaxes(title_text="<b>Systems / Air</b>", row=2, col=1)
     else:
         fig.update_xaxes(common_x, title_text="Time (Seconds)")
-        fig.update_yaxes(title_text="Temp / Speed", secondary_y=False)
-        fig.update_yaxes(title_text="PSI / % / Deg", secondary_y=True)
+        fig.update_yaxes(title_text="<b>Engine / Perf</b>", secondary_y=False)
+        fig.update_yaxes(title_text="<b>Systems / Air</b>", secondary_y=True)
 
     return fig
