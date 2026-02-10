@@ -9,7 +9,7 @@ from github import Github
 # --- AUTH ---
 def check_password():
     if "password_correct" not in st.session_state:
-        st.set_page_config(page_title="SF50 Login", page_icon="🔒")
+        st.set_page_config(page_title="SF50 Dashboard", page_icon="✈️")
         st.title("🔒 SF50 Data Access")
         st.text_input("Enter Password", type="password", key="password_input")
         if st.button("Log In"):
@@ -28,10 +28,9 @@ def get_backend():
 
 repo = get_backend()
 
-# Initialize session state keys
-for key in ["active_df", "active_source", "uploader_key", "delete_confirm"]:
-    if key not in st.session_state:
-        st.session_state[key] = None if "df" in key else "" if "source" in key else 0 if "key" in key else False
+# Init Session State
+for key, val in [("active_df", None), ("active_source", ""), ("uploader_key", 0), ("delete_confirm", False)]:
+    if key not in st.session_state: st.session_state[key] = val
 
 if check_password() and repo:
     st.set_page_config(layout="wide", page_title="Vision Jet Analytics", page_icon="✈️")
@@ -39,7 +38,7 @@ if check_password() and repo:
     with st.sidebar:
         st.title("🚀 SF50 Fleet Control")
         
-        # Load Aircraft Profiles
+        # Profile Selection
         try:
             profile_names = [c.name for c in repo.get_contents("data") if c.type == "dir"]
         except: profile_names = []
@@ -48,8 +47,8 @@ if check_password() and repo:
         
         if selected_profile == "+ Create New Profile":
             new_tail = st.text_input("Tail Number").upper().strip()
-            if st.button("Register Aircraft"):
-                repo.create_file(f"data/{new_tail}/.profile", "init", "Profile Registered")
+            if st.button("Register"):
+                repo.create_file(f"data/{new_tail}/.profile", "init", "Registered")
                 st.rerun()
             st.stop()
 
@@ -57,15 +56,14 @@ if check_password() and repo:
         view_mode = st.radio("Display Layout", ["Single View", "Split View"], index=1)
         st.divider()
 
-        # History Section
+        # History Management
         st.subheader("📜 History")
         try:
             h_path = f"data/{tail_number}"
             h_files = repo.get_contents(h_path)
             h_map = {f.name: f for f in h_files if f.name.endswith(".csv")}
-            h_list = sorted(h_map.keys(), reverse=True)
             
-            sel_h = st.selectbox("Select Log", ["-- Select --"] + h_list)
+            sel_h = st.selectbox("Select Log", ["-- Select --"] + sorted(h_map.keys(), reverse=True))
             
             if sel_h != "-- Select --":
                 c1, c2 = st.columns(2)
@@ -76,7 +74,7 @@ if check_password() and repo:
                         st.session_state.active_source = sel_h
                         st.rerun()
                 
-                if c2.button("🗑️ Delete", use_container_width=True):
+                if c2.button("Delete", use_container_width=True):
                     st.session_state.delete_confirm = True
 
                 if st.session_state.delete_confirm:
@@ -84,7 +82,6 @@ if check_password() and repo:
                     if st.button("Confirm Delete"):
                         repo.delete_file(h_map[sel_h].path, "Del", h_map[sel_h].sha)
                         st.session_state.active_df = None
-                        st.session_state.active_source = ""
                         st.session_state.delete_confirm = False
                         st.rerun()
                     if st.button("Cancel"):
@@ -94,20 +91,19 @@ if check_password() and repo:
             st.info("No logs found.")
 
         st.divider()
-        # Upload Section
+        # Multi-Upload
         up_files = st.file_uploader("Upload CSVs", type="csv", accept_multiple_files=True, key=f"up_{st.session_state.uploader_key}")
         if st.button("Sync & Open", use_container_width=True):
             if up_files:
                 for f in up_files:
                     p_df = cleaner.clean_data(f)
                     repo.create_file(f"data/{tail_number}/{f.name}", f"Upload {f.name}", p_df.to_csv(index=False))
-                    # Auto-open newest
                     st.session_state.active_df = p_df
                     st.session_state.active_source = f.name
                 st.session_state.uploader_key += 1
                 st.rerun()
 
-    # --- DASHBOARD ---
+    # Dashboard Output
     df = st.session_state.active_df
     if df is not None:
         st.title(f"✈️ {tail_number} Analysis")
@@ -120,4 +116,4 @@ if check_password() and repo:
         
         st.plotly_chart(visualizer.generate_dashboard(df, view_mode=view_mode), use_container_width=True)
     else:
-        st.info("👈 Open a log from the sidebar to begin.")
+        st.info("👈 Open a log from history to begin.")
