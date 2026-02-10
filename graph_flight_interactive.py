@@ -1,6 +1,40 @@
-def generate_dashboard(df, view_mode="Split View", active_list=None):
+import pandas as pd
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
+# --- 1. SYSTEM HIERARCHY & COLOR PALETTES ---
+GROUPS = {
+    "Powerplant": {"color": "#D32F2F", "items": ["N1 %", "N2 %", "ITT (F)", "Oil Temp (F)", "Oil Px PSI", "TLA DEG"]},
+    "Environmental": {"color": "#1976D2", "items": ["Cabin Diff PSI", "Bld Px PSI", "Bleed On", "ECS PRI DUCT T (F)", "ECS PRI DUCT T2 (F)", "ECS CKPT T (F)"]},
+    "Airframe/Ice": {"color": "#388E3C", "items": ["EIPS TMP (F)", "EIPS PRS PSI", "TT2 (C)", "PT2 PSI"]},
+    "Avionics/O2": {"color": "#7B1FA2", "items": ["O2 BTL Px PSI", "O2 VLV Open", "CHPV", "Groundspeed"]}
+}
+
+UNITS = {
+    "Groundspeed": "kts", "Cabin Diff PSI": "psi", "Bld Px PSI": "psi", 
+    "Bleed On": "1=ON", "N1 %": "%", "N2 %": "%", "ITT (F)": "°F", 
+    "Oil Temp (F)": "°F", "Oil Px PSI": "psi", "TLA DEG": "°", "TT2 (C)": "°C", 
+    "PT2 PSI": "psi", "CHPV": "V", "ECS PRI DUCT T (F)": "°F", 
+    "ECS PRI DUCT T2 (F)": "°F", "ECS CKPT T (F)": "°F", 
+    "O2 BTL Px PSI": "psi", "O2 VLV Open": "1=OPEN", "EIPS TMP (F)": "°F", 
+    "EIPS PRS PSI": "psi"
+}
+
+LIMIT_LINES = {
+    "ITT (F)": [(1610, "red", "Max T/O"), (1536, "green", "MCT")], 
+    "N1 %": [(104.7, "green", "MCT")], 
+    "N2 %": [(100, "green", "MCT")], 
+    "Oil Px PSI": [(120, "green", "max")]
+}
+
+def generate_dashboard(df_input, view_mode="Split View", active_list=None):
+    # Fix the 'assignment on slice' bug
+    df = df_input.copy()
+    
     if "Time" in df.columns:
         df["Time"] = pd.to_numeric(df["Time"], errors='coerce')
+    else:
+        df["Time"] = range(len(df))
 
     is_split = "Split View" in view_mode
     if is_split:
@@ -15,15 +49,12 @@ def generate_dashboard(df, view_mode="Split View", active_list=None):
                 val = pd.to_numeric(df[title], errors='coerce')
                 unit = UNITS.get(title, "")
                 
-                # --- COORDINATE MAPPING ---
-                # Row 1: Temps/Speed | Row 2: Systems/PSI
+                # Determine which pane and axis to use
                 row_idx = 1 if unit in ["kts", "°F", "°C"] else 2
                 if not is_split: row_idx = 1
-                
-                # Secondary Y is ONLY for Single View 'Systems'
                 is_sec = False if unit in ["kts", "°F", "°C"] else True
 
-                # 1. ADD DATA TRACE
+                # Main Data Trace
                 fig.add_trace(
                     go.Scatter(
                         x=df["Time"], y=val, name=title, mode='lines',
@@ -37,25 +68,38 @@ def generate_dashboard(df, view_mode="Split View", active_list=None):
                     secondary_y=is_sec if not is_split else None
                 )
 
-                # 2. ADD LIMIT LINES (Locked to the same Row/Axis as the trace)
+                # Anchored Limit Lines
                 if title in LIMIT_LINES:
                     for l_val, l_color, l_label in LIMIT_LINES[title]:
                         fig.add_trace(
                             go.Scatter(
-                                x=[df["Time"].min(), df["Time"].max()], 
-                                y=[l_val, l_val],
-                                mode='lines+text', 
-                                text=[f" {l_label}", ""], 
-                                textposition="top right",
-                                line=dict(color=l_color, width=1, dash='dash'),
-                                hoverinfo='skip', 
-                                showlegend=False, 
-                                legendgroup=g_name,
-                                visible=True # Ensures they toggle with the parent trace
+                                x=[df["Time"].min(), df["Time"].max()], y=[l_val, l_val],
+                                mode='lines+text', text=[f" {l_label}", ""], textposition="top right",
+                                line=dict(color=l_color, width=1.5, dash='dash'),
+                                hoverinfo='skip', showlegend=False, legendgroup=g_name
                             ),
-                            row=row_idx, col=1, # FORCES limit to same row as data
-                            secondary_y=is_sec if not is_split else None # FORCES limit to same Y-scale
+                            row=row_idx, col=1,
+                            secondary_y=is_sec if not is_split else None
                         )
 
-    # ... (Rest of layout/spikes logic remains the same)
+    fig.update_layout(
+        height=850, template="plotly_white", hovermode="x",
+        margin=dict(l=20, r=20, t=30, b=50),
+        legend=dict(groupclick="toggleitem", orientation="v", y=0.5, x=1.02)
+    )
+
+    common_x = dict(showspikes=True, spikemode='across', spikesnap='cursor',
+                    spikethickness=2, spikedash='dash', spikecolor='black',
+                    showline=True, linewidth=1, linecolor='black', mirror=True)
+
+    if is_split:
+        fig.update_xaxes(common_x, row=1, col=1, matches='x')
+        fig.update_xaxes(common_x, row=2, col=1, title_text="Time (Seconds)", matches='x')
+        fig.update_yaxes(title_text="Temp / Speed", row=1, col=1)
+        fig.update_yaxes(title_text="PSI / % / Deg", row=2, col=1)
+    else:
+        fig.update_xaxes(common_x, title_text="Time (Seconds)")
+        fig.update_yaxes(title_text="Temp / Speed", secondary_y=False)
+        fig.update_yaxes(title_text="PSI / % / Deg", secondary_y=True)
+
     return fig
