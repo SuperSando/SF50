@@ -44,8 +44,7 @@ def generate_dashboard(df, view_mode="Single View"):
         fig = make_subplots(
             rows=2, cols=1, 
             shared_xaxes=True, 
-            vertical_spacing=0.04,
-            subplot_titles=(None, None) 
+            vertical_spacing=0.02, # Very tight to make the line look continuous
         )
         height = 950
     else:
@@ -92,19 +91,21 @@ def generate_dashboard(df, view_mode="Single View"):
             color_idx += 1
 
     fig.update_layout(
-        height=height, template="plotly_white", hovermode="x unified",
-        hoverdistance=-1, 
+        height=height, 
+        template="plotly_white", 
+        hovermode="x unified",
+        hoverdistance=-1, # Ensure hover triggers across both subplots
         hoverlabel=dict(bgcolor="white", font_size=14, font_family="Arial Black", font_color="black"),
         plot_bgcolor="white", paper_bgcolor="white", font=dict(color="black"),
         legend=dict(title="<b>Parameters:</b>", y=0.5, x=1.05, yanchor="middle"),
-        margin=dict(l=20, r=20, t=40, b=20)
+        margin=dict(l=20, r=20, t=20, b=20)
     )
 
-    # --- CROSS-SUBPLOT SPIKE LOGIC ---
+    # --- THE MAGIC FOR THE CONTINUOUS LINE ---
     spike_style = dict(
         showspikes=True, 
-        spikemode='across', # Forces the line to travel across all subplots
-        spikesnap='cursor', # Follows mouse, not data points
+        spikemode='across', 
+        spikesnap='cursor', 
         spikethickness=2, 
         spikedash='dash', 
         spikecolor='#555555',
@@ -112,9 +113,10 @@ def generate_dashboard(df, view_mode="Single View"):
     )
 
     if "Split View" in view_mode:
-        # Applying the spike to both X-axes ensures it is visible in both panes
+        # Force Row 2 to match Row 1's X-axis and enable spikes on both
         fig.update_xaxes(spike_style, row=1, col=1)
-        fig.update_xaxes(spike_style, row=2, col=1, title_text="<b>Time (Seconds)</b>")
+        fig.update_xaxes(spike_style, row=2, col=1, title_text="<b>Time (Seconds)</b>", matches='x')
+        
         fig.update_yaxes(title_text="<b>Temp / Speed</b>", row=1, col=1, gridcolor='#F0F2F6', zeroline=False)
         fig.update_yaxes(title_text="<b>PSI / % / Deg</b>", row=2, col=1, gridcolor='#F0F2F6', zeroline=False)
     else:
