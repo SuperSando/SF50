@@ -51,7 +51,10 @@ def generate_dashboard(df, view_mode="Single View"):
         if col_name in df.columns:
             unit = UNITS.get(title, "")
             line_color = colors[color_idx % len(colors)]
-            trace_visible = True if title in ["ITT (F)", "N1 %", "Groundspeed"] else 'legendonly'
+            
+            # --- UPDATED DEFAULT VISIBILITY ---
+            # Now defaults to N2 % and Bld Px PSI
+            trace_visible = True if title in ["N2 %", "Bld Px PSI"] else 'legendonly'
 
             row_idx = 1 if unit in ["kts", "°F", "°C"] else 2
             if not is_split: row_idx = 1
@@ -65,8 +68,7 @@ def generate_dashboard(df, view_mode="Single View"):
                     visible=trace_visible,
                     legendgroup=title,
                     hoverlabel=dict(
-                        # 0.3 Alpha = 70% Transparent. High contrast border.
-                        bgcolor="rgba(255, 255, 255, 0.3)", 
+                        bgcolor="rgba(255, 255, 255, 0.5)", 
                         bordercolor=line_color,
                         font=dict(family="Arial Black", size=12, color="black")
                     ),
@@ -76,7 +78,7 @@ def generate_dashboard(df, view_mode="Single View"):
                 secondary_y=is_sec if not is_split else None
             )
 
-            # LIMIT LINES (Restored correctly)
+            # LIMIT LINES (Linked Visibility)
             if title in LIMIT_LINES:
                 for val, color, label in LIMIT_LINES[title]:
                     fig.add_trace(
@@ -93,7 +95,7 @@ def generate_dashboard(df, view_mode="Single View"):
                     )
             color_idx += 1
 
-    # --- LAYOUT CONTRAST ADJUSTMENT ---
+    # --- LAYOUT ---
     fig.update_layout(
         height=height,
         template="plotly_white",
@@ -102,7 +104,6 @@ def generate_dashboard(df, view_mode="Single View"):
         spikedistance=-1,
         margin=dict(l=20, r=20, t=30, b=50),
         legend=dict(y=0.5, x=1.05),
-        # Slightly off-white to make the "frosted" labels visible
         paper_bgcolor="#F8F9FB", 
         plot_bgcolor="white"
     )
