@@ -36,6 +36,7 @@ repo = get_backend_connection()
 if "active_df" not in st.session_state: st.session_state.active_df = None
 if "active_source" not in st.session_state: st.session_state.active_source = ""
 if "uploader_key" not in st.session_state: st.session_state.uploader_key = 0
+if "delete_confirm" not in st.session_state: st.session_state.delete_confirm = False
 
 # --- 2. MAIN APP ---
 if check_password() and repo:
@@ -47,7 +48,9 @@ if check_password() and repo:
         try:
             contents = repo.get_contents("data")
             profile_names = [c.name for c in contents if c.type == "dir"]
-        except: profile_names = []
+        except Exception as e:
+            st.error(f"GitHub Error: {e}")
+            profile_names = []
 
         selected_profile = st.selectbox("Select Aircraft", ["+ Create New Profile"] + sorted(profile_names))
         
@@ -61,45 +64,55 @@ if check_password() and repo:
         view_mode = st.radio("Dashboard Layout", ["Single View", "Split View"], index=1)
         st.divider()
 
-        # --- HISTORY & DELETE LOGIC ---
+        # --- RE-ENGINEERED HISTORY LOGIC ---
         st.subheader("📜 Flight History")
+        
+        # Get directory contents first
+        history_path = f"data/{tail_number}"
         try:
-            history_files = repo.get_contents(f"data/{tail_number}")
-            history_map = {f.name: f for f in history_files if f.name.endswith(".csv")}
+            history_files = repo.get_contents(history_path)
+            # Filter for CSVs only
+            history_map = {f.name: f for f in history_files if f.name.lower().endswith(".csv")}
             history_list = sorted(history_map.keys(), reverse=True)
             
-            selected_history = st.selectbox("Select Log", ["-- Select a File --"] + history_list)
-            
-            if selected_history != "-- Select a File --":
-                col1, col2 = st.columns(2)
+            if not history_list:
+                st.info("No logs found for this tail number.")
+            else:
+                selected_history = st.selectbox("Select Log", ["-- Select a File --"] + history_list)
                 
-                # OPEN BUTTON (Modified)
-                if col1.button("Open", use_container_width=True, type="primary"):
-                    with st.spinner("Opening 12MB log..."):
-                        file_data = repo.get_contents(f"data/{tail_number}/{selected_history}")
-                        raw_bytes = file_data.decoded_content
-                        st.session_state.active_df = pd.read_csv(io.BytesIO(raw_bytes))
-                        st.session_state.active_source = selected_history
-                        st.rerun()
+                if selected_history != "-- Select a File --":
+                    col1, col2 = st.columns(2)
+                    
+                    if col1.button("Open", use_container_width=True, type="primary"):
+                        with st.spinner(f"Downloading {selected_history}..."):
+                            try:
+                                # Fetch the file directly from the map
+                                file_obj = history_map[selected_history]
+                                raw_bytes = file_obj.decoded_content
+                                st.session_state.active_df = pd.read_csv(io.BytesIO(raw_bytes))
+                                st.session_state.active_source = selected_history
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Failed to load file: {e}")
 
-                # DELETE BUTTON
-                if col2.button("🗑️ Delete", use_container_width=True):
-                    st.session_state.delete_confirm = True
+                    if col2.button("🗑️ Delete", use_container_width=True):
+                        st.session_state.delete_confirm = True
 
-                if st.session_state.get("delete_confirm"):
-                    st.warning(f"Delete {selected_history}?")
-                    if st.button("Confirm Permanent Delete"):
-                        file_to_del = history_map[selected_history]
-                        repo.delete_file(file_to_del.path, f"Del {selected_history}", file_to_del.sha)
-                        st.session_state.active_df = None
-                        st.session_state.active_source = ""
-                        st.session_state.delete_confirm = False
-                        st.rerun()
-                    if st.button("Cancel"):
-                        st.session_state.delete_confirm = False
-                        st.rerun()
-        except Exception:
-            st.info("No flight history found for this aircraft.")
+                    if st.session_state.delete_confirm:
+                        st.warning(f"Confirm deletion of {selected_history}?")
+                        c_col1, c_col2 = st.columns(2)
+                        if c_col1.button("Yes, Delete", type="primary"):
+                            file_to_del = history_map[selected_history]
+                            repo.delete_file(file_to_del.path, f"Del {selected_history}", file_to_del.sha)
+                            st.session_state.active_df = None
+                            st.session_state.active_source = ""
+                            st.session_state.delete_confirm = False
+                            st.rerun()
+                        if c_col2.button("Cancel"):
+                            st.session_state.delete_confirm = False
+                            st.rerun()
+        except Exception as e:
+            st.error(f"Could not access history: {e}")
 
         st.divider()
         # --- UPLOAD LOGIC ---
