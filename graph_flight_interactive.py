@@ -26,58 +26,61 @@ UNITS = {
     "EIPS PRS PSI": "psi"
 }
 
-# --- THE FIX: AXIS MAPPING BY UNIT ---
-# True = Right Axis, False = Left Axis
 AXIS_MAP = {
-    "kts": False, "°F": False, "°C": False, # Temps and Speeds on the Left
-    "psi": True, "%": True, "°": True, "1=ON": True, "1=OPEN": True, "V": True # Everything else on Right
+    "kts": False, "°F": False, "°C": False, 
+    "psi": True, "%": True, "°": True, "1=ON": True, "1=OPEN": True, "V": True 
 }
 
 LIMIT_LINES = {
-    "ITT (F)": [(1610, "red", "Max T/O 10sec"), (1583, "orange", "Max T/O 5mins"), (1536, "green", "MCT")], 
-    "N1 %": [(105.7, "red", "Tran. 30sec"), (104.7, "green", "MCT")], 
-    "N2 %": [(101, "red", "Tran. 30sec"), (100, "green", "MCT")], 
-    "Oil Px PSI": [(120, "green", "max")]
+    "ITT (F)": [(1610, "#FF0033", "MAX T/O"), (1536, "#00CC66", "MCT")], 
+    "N1 %": [(105.7, "#FF0033", "LIMIT"), (104.7, "#00CC66", "MCT")]
 }
 
-X_AXIS_COL = "Time"
-
 def generate_dashboard(df):
-    if X_AXIS_COL in df.columns:
-         df[X_AXIS_COL] = pd.to_numeric(df[X_AXIS_COL], errors='coerce')
+    if "Time" in df.columns:
+         df["Time"] = pd.to_numeric(df["Time"], errors='coerce')
     
     fig = make_subplots(specs=[[{"secondary_y": True}]])
-    colors = ['#636EFA', '#EF553B', '#00CC96', '#AB63FA', '#FFA15A', '#19D3F3', '#FF6692', '#B6E880', '#FF97FF', '#FECB52']
+    
+    # Modern "Cyber" Palette
+    colors = ['#2E5BFF', '#FF1744', '#00E676', '#D500F9', '#FF9100', '#00B0FF', '#FFEA00', '#1DE9B6']
     color_idx = 0
 
     for title, col_name in GRAPH_MAPPINGS.items():
         if col_name in df.columns:
             df[col_name] = pd.to_numeric(df[col_name], errors='coerce')
             unit = UNITS.get(title, "") 
-            
-            # Decide axis based on unit mapping
             use_secondary = AXIS_MAP.get(unit, False)
-            
             line_color = colors[color_idx % len(colors)]
             trace_visible = True if title in DEFAULT_VISIBLE else 'legendonly'
 
+            # 1. Main Trace with Smoothing and Shadow
             fig.add_trace(
                 go.Scatter(
-                    x=df[X_AXIS_COL], y=df[col_name], name=title, mode='lines', 
-                    visible=trace_visible, legendgroup=title,
-                    line=dict(color=line_color, width=2),
+                    x=df["Time"], y=df[col_name], 
+                    name=title, 
+                    mode='lines', 
+                    visible=trace_visible, 
+                    legendgroup=title,
+                    line=dict(
+                        color=line_color, 
+                        width=3, 
+                        shape='spline', # Makes the lines smooth/modern
+                        smoothing=1.3
+                    ),
                     hovertemplate=f"<b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
                 ),
                 secondary_y=use_secondary, 
             )
 
+            # 2. Refined Limit Lines
             if title in LIMIT_LINES:
                 for val, color, label in LIMIT_LINES[title]:
                     fig.add_trace(
                         go.Scatter(
-                            x=[df[X_AXIS_COL].min(), df[X_AXIS_COL].max()], y=[val, val],
-                            mode='lines+text', text=[label, ""], textposition="top right",
-                            line=dict(color=color, width=1, dash='dash'),
+                            x=[df["Time"].min(), df["Time"].max()], y=[val, val],
+                            mode='lines', 
+                            line=dict(color=color, width=1, dash='dot'),
                             name=label, legendgroup=title, showlegend=False, 
                             visible=trace_visible, hoverinfo='skip'
                         ),
@@ -86,33 +89,48 @@ def generate_dashboard(df):
             color_idx += 1
 
     fig.update_layout(
-        height=800, template="plotly_white", hovermode="x unified",
-        hoverdistance=-1, 
-        hoverlabel=dict(bgcolor="white", font_size=14, font_family="Arial Black", font_color="black"),
-        plot_bgcolor="white", paper_bgcolor="white", font=dict(color="black"),
-        legend=dict(title="<b>Parameters:</b>", y=0.99, x=1.05, font=dict(color="black")),
-        margin=dict(l=20, r=20, t=40, b=20)
+        height=850,
+        template="plotly_white",
+        hovermode="x unified",
+        hoverlabel=dict(
+            bgcolor="rgba(255, 255, 255, 0.98)",
+            font_size=15,
+            font_family="Monospace", # Monospace looks more "instrumental"
+            font_color="#1A1A1A",
+            bordercolor="#D1D1D1"
+        ),
+        # Pure Light Theme Hardening
+        plot_bgcolor="#FFFFFF",
+        paper_bgcolor="#FFFFFF",
+        font=dict(family="Inter, sans-serif", color="#263238"),
+        
+        legend=dict(
+            title="<b>SYSTEM PARAMETERS</b>",
+            y=1, x=1.02,
+            bgcolor="rgba(255,255,255,0)",
+            bordercolor="#ECEFF1",
+            borderwidth=1
+        ),
+        margin=dict(l=80, r=80, t=50, b=50)
     )
 
+    # Clean, modern axes
     fig.update_xaxes(
-        title_text="<b>Time (Seconds)</b>", showline=True, linewidth=1, 
-        linecolor='black', mirror=True, gridcolor='#F0F2F6',
+        title_text="<b>ELAPSED TIME (SEC)</b>",
+        showgrid=True, gridcolor='#F5F5F5',
         showspikes=True, spikemode='across', spikesnap='cursor', 
-        spikethickness=2, spikedash='dash', spikecolor='#555555'
+        spikethickness=1, spikedash='dash', spikecolor='#B0BEC5'
     )
 
-    # Left Axis: Temperature and Speed
     fig.update_yaxes(
-        title_text="<b>Temp (°F/°C) / Speed (kts)</b>",
-        secondary_y=False, showgrid=True, gridcolor='#F0F2F6', 
-        showline=True, linecolor='black', mirror=True, zeroline=False
+        title_text="<b>ENV / PERFORMANCE</b>",
+        secondary_y=False, showgrid=True, gridcolor='#F5F5F5',
+        zeroline=False, tickformat=".1f"
     )
 
-    # Right Axis: Pressure, Percentage, and Mechanical Degree
     fig.update_yaxes(
-        title_text="<b>PSI / % / Degree (°)</b>",
-        secondary_y=True, showline=True, linecolor='black', 
-        mirror=True, zeroline=False
+        title_text="<b>SYSTEMS / LOGIC</b>",
+        secondary_y=True, zeroline=False, tickformat=".1f"
     )
 
     return fig
