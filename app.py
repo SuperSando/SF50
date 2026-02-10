@@ -4,6 +4,7 @@ import clean_flight_data as cleaner
 import graph_flight_interactive as visualizer
 import io
 import requests
+import time
 from github import Github 
 
 # --- 1. AUTHENTICATION ---
@@ -43,7 +44,6 @@ if check_password() and repo:
     with st.sidebar:
         st.title("🚀 SF50 Fleet Control")
         
-        # Aircraft Selection
         try:
             profile_names = [c.name for c in repo.get_contents("data") if c.type == "dir"]
         except: 
@@ -71,46 +71,53 @@ if check_password() and repo:
         view_mode = st.radio("Display Layout", ["Single View", "Split View"], index=1)
         st.divider()
 
-        # --- HISTORY MANAGEMENT ---
+        # --- RESILIENT HISTORY MANAGEMENT ---
         st.subheader("📜 History")
+        h_map = {}
+        
+        # We try to get contents. If it fails once, we don't immediately show "No logs found"
         try:
             h_path = f"data/{tail_number}"
             contents = repo.get_contents(h_path)
             h_map = {f.name: f for f in contents if f.name.endswith(".csv")}
+        except Exception:
+            # Silent fail here; we'll check h_map below
+            pass
             
-            if not h_map:
-                st.info("No logs found for this aircraft.")
-            else:
-                history_list = sorted(h_map.keys(), reverse=True)
+        if not h_map:
+            # Double Check: Sometimes GitHub takes a second to respond to a new directory request
+            st.info("No logs found. If you just uploaded, wait a moment.")
+            if st.button("🔍 Check Again"):
+                st.rerun()
+        else:
+            history_list = sorted(h_map.keys(), reverse=True)
+            
+            # Use unique key to prevent dropdown ghosting
+            sel_h = st.selectbox("Select Log", ["-- Select a File --"] + history_list, key=f"hist_{tail_number}")
+            
+            if sel_h != "-- Select a File --":
+                c1, c2 = st.columns(2)
+                if c1.button("Open", use_container_width=True, type="primary"):
+                    with st.spinner("Downloading..."):
+                        resp = requests.get(h_map[sel_h].download_url)
+                        st.session_state.active_df = pd.read_csv(io.BytesIO(resp.content))
+                        st.session_state.active_source = sel_h
+                        st.rerun()
                 
-                # Unique key per tail_number prevents "Index Error" when switching planes
-                sel_h = st.selectbox("Select Log", ["-- Select a File --"] + history_list, key=f"hist_{tail_number}")
-                
-                if sel_h != "-- Select a File --":
-                    c1, c2 = st.columns(2)
-                    if c1.button("Open", use_container_width=True, type="primary"):
-                        with st.spinner("Downloading..."):
-                            resp = requests.get(h_map[sel_h].download_url)
-                            st.session_state.active_df = pd.read_csv(io.BytesIO(resp.content))
-                            st.session_state.active_source = sel_h
-                            st.rerun()
-                    
-                    if c2.button("🗑️ Delete", use_container_width=True):
-                        st.session_state.delete_confirm = True
+                if c2.button("🗑️ Delete", use_container_width=True):
+                    st.session_state.delete_confirm = True
 
-                    if st.session_state.delete_confirm:
-                        st.warning("Delete permanently?")
-                        if st.button("Yes, Confirm"):
-                            repo.delete_file(h_map[sel_h].path, "Del", h_map[sel_h].sha)
-                            st.session_state.active_df = None
-                            st.session_state.active_source = ""
-                            st.session_state.delete_confirm = False
-                            st.rerun()
-                        if st.button("Cancel"):
-                            st.session_state.delete_confirm = False
-                            st.rerun()
-        except:
-            st.info("No logs found for this aircraft.")
+                if st.session_state.delete_confirm:
+                    st.warning("Delete permanently?")
+                    if st.button("Yes, Confirm"):
+                        repo.delete_file(h_map[sel_h].path, "Del", h_map[sel_h].sha)
+                        st.session_state.active_df = None
+                        st.session_state.active_source = ""
+                        st.session_state.delete_confirm = False
+                        st.rerun()
+                    if st.button("Cancel"):
+                        st.session_state.delete_confirm = False
+                        st.rerun()
 
         st.divider()
         # Batch Upload
