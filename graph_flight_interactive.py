@@ -1,5 +1,6 @@
 import pandas as pd
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 # --- 1. CONFIGURATION ---
 GRAPH_MAPPINGS = {
@@ -32,110 +33,91 @@ LIMIT_LINES = {
 
 def generate_dashboard(df, view_mode="Single View"):
     if "Time" in df.columns:
-         df["Time"] = pd.to_numeric(df["Time"], errors='coerce')
+        df["Time"] = pd.to_numeric(df["Time"], errors='coerce')
 
-    fig = go.Figure()
-    is_split = "Split View" in view_mode
+    # Create subplots
+    if "Split View" in view_mode:
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.02)
+        height = 850
+    else:
+        fig = make_subplots(rows=1, cols=1, specs=[[{"secondary_y": True}]])
+        height = 800
+
     colors = ['#2E5BFF', '#FF1744', '#00CC96', '#AB63FA', '#FFA15A', '#19D3F3', '#FF6692', '#B6E880', '#FF97FF', '#FECB52']
     color_idx = 0
 
     for title, col_name in GRAPH_MAPPINGS.items():
         if col_name in df.columns:
-            data = pd.to_numeric(df[col_name], errors='coerce')
-            unit = UNITS.get(title, "") 
+            unit = UNITS.get(title, "")
             line_color = colors[color_idx % len(colors)]
             trace_visible = True if title in ["ITT (F)", "N1 %", "Groundspeed"] else 'legendonly'
 
-            # --- PLOTTING LOGIC ---
+            # Determine row for split view
+            # Row 1: Speed/Temp | Row 2: Systems
+            row = 1 if unit in ["kts", "°F", "°C"] else 2
+            if "Single View" in view_mode: row = 1
+            
+            # Secondary Y logic for single view
+            is_sec = False if unit in ["kts", "°F", "°C"] else True
+
+            # DATA TRACE
             fig.add_trace(
                 go.Scatter(
-                    x=df["Time"], 
-                    y=data, 
-                    name=title, 
-                    mode='lines', 
-                    visible=trace_visible, 
-                    legendgroup=title,
-                    # We use yaxis2 for Systems in both modes for consistency
-                    yaxis="y" if unit in ["kts", "°F", "°C"] else "y2",
+                    x=df["Time"], y=df[col_name], name=title, mode='lines',
                     line=dict(color=line_color, width=2),
+                    visible=trace_visible,
                     hoverlabel=dict(
-                        bgcolor="rgba(255, 255, 255, 0.7)", 
+                        bgcolor="rgba(255,255,255,0.7)", 
                         bordercolor=line_color,
-                        font_size=12,
-                        font_family="Arial Black"
+                        font=dict(family="Arial Black", size=12, color="black")
                     ),
                     hovertemplate=f"<b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
-                )
+                ),
+                row=row if "Split" in view_mode else 1, 
+                col=1,
+                secondary_y=is_sec if "Single" in view_mode else None
             )
 
-            # --- LIMIT LINES ---
+            # LIMIT LINES (Restored with Labels)
             if title in LIMIT_LINES:
                 for val, color, label in LIMIT_LINES[title]:
                     fig.add_trace(
                         go.Scatter(
                             x=[df["Time"].min(), df["Time"].max()], y=[val, val],
-                            yaxis="y" if unit in ["kts", "°F", "°C"] else "y2",
-                            mode='lines+text',
-                            text=[label, ""],
-                            textposition="top right",
+                            mode='lines+text', text=[label, ""], textposition="top right",
                             line=dict(color=color, width=1, dash='dash'),
-                            hoverinfo='skip',
-                            showlegend=False,
-                            visible=trace_visible
-                        )
+                            hoverinfo='skip', showlegend=False, visible=trace_visible
+                        ),
+                        row=row if "Split" in view_mode else 1, col=1
                     )
             color_idx += 1
 
-    # --- LAYOUT FIX ---
-    layout_cfg = dict(
-        height=800,
+    # --- THE GLOBAL SYNC OVERRIDE ---
+    fig.update_layout(
+        height=height,
         template="plotly_white",
-        hovermode="x",  # Force all boxes on the X-line to show
+        hovermode="x", # Triggers ALL traces at X
         hoverdistance=-1,
         spikedistance=-1,
         margin=dict(l=50, r=50, t=30, b=50),
-        legend=dict(y=0.5, x=1.1),
-        
-        xaxis=dict(
-            title="Time (Seconds)",
-            showspikes=True,
-            spikemode="across",
-            spikesnap="cursor",
-            spikethickness=1,
-            spikedash="dash",
-            spikecolor="#999",
-            showline=True,
-            linecolor="black",
-            mirror=True
-        ),
-        
-        # Upper Plot
-        yaxis=dict(
-            title="Performance",
-            domain=[0.55, 1] if is_split else [0, 1],
-            showline=True,
-            linecolor="black",
-            mirror=True,
-            zeroline=False
-        ),
-        
-        # Lower Plot
-        yaxis2=dict(
-            title="Systems",
-            domain=[0, 0.45] if is_split else [0, 1],
-            overlaying="y" if not is_split else None,
-            side="right" if not is_split else "left",
-            showline=True,
-            linecolor="black",
-            mirror=True,
-            zeroline=False
-        )
+        legend=dict(y=0.5, x=1.05)
     )
 
-    if is_split:
-        layout_cfg["shapes"] = [
-            dict(type="line", xref="paper", yref="paper", x0=0, x1=1, y0=0.5, y1=0.5, line=dict(color="black", width=1))
-        ]
+    # Spike and Axis Style
+    common_x = dict(
+        showspikes=True, spikemode='across', spikesnap='cursor',
+        spikethickness=1, spikedash='dash', spikecolor='black',
+        showline=True, linewidth=1, linecolor='black', mirror=True
+    )
 
-    fig.update_layout(layout_cfg)
+    if "Split View" in view_mode:
+        fig.update_xaxes(common_x, row=1, col=1)
+        fig.update_xaxes(common_x, row=2, col=1, title_text="Time (Seconds)")
+        fig.update_yaxes(title_text="Perf / Temp", row=1, col=1, showline=True, linecolor='black')
+        fig.update_yaxes(title_text="Systems / PSI", row=2, col=1, showline=True, linecolor='black')
+    else:
+        fig.update_xaxes(common_x, title_text="Time (Seconds)")
+        fig.update_yaxes(title_text="Perf / Temp", secondary_y=False)
+        fig.update_yaxes(title_text="Systems / PSI", secondary_y=True)
+
     return fig
