@@ -26,14 +26,14 @@ UNITS = {
     "EIPS PRS PSI": "psi"
 }
 
-# Unit mapping to Panes: False = Top (Engine/Speed), True = Bottom (Systems/Logic)
+# 1 = Top Pane (Performance), 2 = Bottom Pane (Systems)
 PANE_MAP = {
     "kts": 1, "°F": 1, "°C": 1, 
     "psi": 2, "%": 2, "°": 2, "1=ON": 2, "1=OPEN": 2, "V": 2 
 }
 
 LIMIT_LINES = {
-    "ITT (F)": [(1610, "red", "Max T/O 10sec"), (1536, "green", "MCT")], 
+    "ITT (F)": [(1610, "red", "Max T/O 10sec"), (1583, "orange", "Max T/O 5mins"), (1536, "green", "MCT")], 
     "N1 %": [(105.7, "red", "Limit"), (104.7, "green", "MCT")],
     "Oil Px PSI": [(120, "green", "max")]
 }
@@ -42,11 +42,11 @@ def generate_dashboard(df):
     if "Time" in df.columns:
          df["Time"] = pd.to_numeric(df["Time"], errors='coerce')
     
-    # 1. Initialize Subplots: 2 Rows, Shared X
+    # Shared X-axis is key for temporal correlation
     fig = make_subplots(
         rows=2, cols=1, 
         shared_xaxes=True, 
-        vertical_spacing=0.07,
+        vertical_spacing=0.08,
         subplot_titles=("<b>ENGINE PERFORMANCE & ENVIRONMENT</b>", "<b>SYSTEMS HEALTH & LOGIC</b>")
     )
     
@@ -57,12 +57,12 @@ def generate_dashboard(df):
         if col_name in df.columns:
             df[col_name] = pd.to_numeric(df[col_name], errors='coerce')
             unit = UNITS.get(title, "") 
-            row_idx = PANE_MAP.get(unit, 2) # Default to bottom pane if unknown
+            row_idx = PANE_MAP.get(unit, 2)
             
             line_color = colors[color_idx % len(colors)]
             trace_visible = True if title in DEFAULT_VISIBLE else 'legendonly'
 
-            # Add Trace to specific row
+            # Add to the mapped Row
             fig.add_trace(
                 go.Scatter(
                     x=df["Time"], y=df[col_name], 
@@ -76,28 +76,32 @@ def generate_dashboard(df):
                 row=row_idx, col=1
             )
 
-            # Add Limit Lines to the same row
             if title in LIMIT_LINES:
                 for val, color, label in LIMIT_LINES[title]:
                     fig.add_trace(
                         go.Scatter(
-                            x=[df["Time"].min(), df["Time"].max()], y=[val, val],
-                            mode='lines+text', text=[label, ""], textposition="top right",
+                            x=[df["Time"].min(), df["Time"].max()], 
+                            y=[val, val],
+                            mode='lines+text', 
+                            text=[label, ""], 
+                            textposition="top right",
                             line=dict(color=color, width=1, dash='dash'),
-                            name=label, legendgroup=title, showlegend=False, 
-                            visible=trace_visible, hoverinfo='skip'
+                            name=label, 
+                            legendgroup=title, 
+                            showlegend=False, 
+                            visible=trace_visible, 
+                            hoverinfo='skip'
                         ),
                         row=row_idx, col=1
                     )
             color_idx += 1
 
-    # 2. Global Layout Settings
     fig.update_layout(
-        height=900,
+        height=950,
         template="plotly_white",
         hovermode="x unified",
         hoverdistance=-1,
-        hoverlabel=dict(bgcolor="white", font_size=14, font_family="Arial Black", font_color="black"),
+        hoverlabel=dict(bgcolor="rgba(255, 255, 255, 0.95)", font_size=14, font_family="Arial Black", font_color="black"),
         plot_bgcolor="white",
         paper_bgcolor="white",
         font=dict(color="black"),
@@ -105,17 +109,17 @@ def generate_dashboard(df):
         margin=dict(l=20, r=20, t=60, b=20)
     )
 
-    # 3. Synchronized X-Axes Spikes
-    spike_config = dict(
+    # Vertical dash strike-line settings
+    spike_style = dict(
         showspikes=True, spikemode='across', spikesnap='cursor', 
         spikethickness=2, spikedash='dash', spikecolor='#555555',
         showline=True, linewidth=1, linecolor='black', mirror=True, gridcolor='#F0F2F6'
     )
     
-    fig.update_xaxes(spike_config, row=1, col=1)
-    fig.update_xaxes(spike_config, row=2, col=1, title_text="<b>Time (Seconds)</b>")
+    # Applying spikes to both axes so the line cuts through the entire dashboard
+    fig.update_xaxes(spike_style, row=1, col=1)
+    fig.update_xaxes(spike_style, row=2, col=1, title_text="<b>Time (Seconds)</b>")
 
-    # 4. Y-Axes Titles
     fig.update_yaxes(title_text="<b>Temp / Speed</b>", row=1, col=1, gridcolor='#F0F2F6', zeroline=False)
     fig.update_yaxes(title_text="<b>PSI / % / Deg</b>", row=2, col=1, gridcolor='#F0F2F6', zeroline=False)
 
