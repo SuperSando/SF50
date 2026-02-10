@@ -65,7 +65,8 @@ def generate_dashboard(df, view_mode="Single View"):
                     visible=trace_visible,
                     legendgroup=title,
                     hoverlabel=dict(
-                        bgcolor="rgba(255, 255, 255, 0.5)", 
+                        # 0.3 Alpha = 70% Transparent. High contrast border.
+                        bgcolor="rgba(255, 255, 255, 0.3)", 
                         bordercolor=line_color,
                         font=dict(family="Arial Black", size=12, color="black")
                     ),
@@ -75,7 +76,7 @@ def generate_dashboard(df, view_mode="Single View"):
                 secondary_y=is_sec if not is_split else None
             )
 
-            # LIMIT LINES (Restored Visibility Logic)
+            # LIMIT LINES (Restored correctly)
             if title in LIMIT_LINES:
                 for val, color, label in LIMIT_LINES[title]:
                     fig.add_trace(
@@ -92,7 +93,7 @@ def generate_dashboard(df, view_mode="Single View"):
                     )
             color_idx += 1
 
-    # --- LAYOUT ---
+    # --- LAYOUT CONTRAST ADJUSTMENT ---
     fig.update_layout(
         height=height,
         template="plotly_white",
@@ -100,7 +101,10 @@ def generate_dashboard(df, view_mode="Single View"):
         hoverdistance=-1,
         spikedistance=-1,
         margin=dict(l=20, r=20, t=30, b=50),
-        legend=dict(y=0.5, x=1.05)
+        legend=dict(y=0.5, x=1.05),
+        # Slightly off-white to make the "frosted" labels visible
+        paper_bgcolor="#F8F9FB", 
+        plot_bgcolor="white"
     )
 
     common_x = dict(
