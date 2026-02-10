@@ -65,53 +65,54 @@ if check_password() and repo:
             new_sn = st.text_input("Aircraft S/N") 
             if st.button("Register Aircraft", use_container_width=True, type="primary"):
                 if new_tail and new_sn:
-                    # Create directory and metadata file
                     repo.create_file(f"data/{new_tail}/.profile", f"Init {new_tail}", f"S/N: {new_sn}")
                     st.success(f"Registered {new_tail}")
                     st.rerun()
             st.stop()
 
-        # --- AIRCRAFT METADATA DISPLAY ---
+        # --- AIRCRAFT METADATA DISPLAY (CLEAN VERSION) ---
         tail_number = selected_profile
-        active_sn = "Unknown"
+        active_sn = "S/N: Unknown"
         profile_ref = None
         
         try:
             profile_ref = repo.get_contents(f"data/{tail_number}/.profile")
-            active_sn = profile_ref.decoded_content.decode().replace("S/N: ", "")
+            active_sn = profile_ref.decoded_content.decode() # Already includes "S/N: "
         except:
-            st.warning("⚠️ Profile link broken.")
+            pass
 
-        st.info(f"**Tail:** {tail_number}  \n**S/N:** {active_sn}")
+        # Clean display: Only the Serial Number in the shaded area
+        st.info(f"**{active_sn}**")
 
         # --- MANAGE PROFILE SECTION ---
-        with st.expander("🛠️ Manage Profile Settings"):
+        with st.expander("🛠️ Manage Profile"):
             # Update SN
-            new_sn_input = st.text_input("Change Serial Number", value=active_sn if active_sn != "Unknown" else "")
+            current_sn_val = active_sn.replace("S/N: ", "") if "S/N: " in active_sn else ""
+            new_sn_input = st.text_input("Change Serial Number", value=current_sn_val)
+            
             if st.button("Save S/N Change"):
                 if profile_ref:
                     repo.update_file(profile_ref.path, f"Update SN {tail_number}", f"S/N: {new_sn_input}", profile_ref.sha)
                 else:
                     repo.create_file(f"data/{tail_number}/.profile", f"Fix Metadata {tail_number}", f"S/N: {new_sn_input}")
-                st.success("Metadata Updated")
+                st.success("S/N Updated")
                 st.rerun()
             
             st.divider()
             
             # Delete Profile
             if not st.session_state.profile_delete_confirm:
-                if st.button("🗑️ Delete Entire Aircraft", use_container_width=True):
+                if st.button("🗑️ Delete Aircraft Profile", use_container_width=True):
                     st.session_state.profile_delete_confirm = True
                     st.rerun()
             else:
-                st.error("PERMANENTLY DELETE ALL DATA?")
-                if st.button("YES, PURGE AIRCRAFT"):
-                    with st.spinner("Purging files..."):
+                st.error("Confirm permanent delete?")
+                if st.button("YES, PURGE EVERYTHING"):
+                    with st.spinner("Deleting files..."):
                         contents = repo.get_contents(f"data/{tail_number}")
                         for item in contents:
                             repo.delete_file(item.path, f"Purge {tail_number}", item.sha)
                         st.session_state.last_profile = None
-                        st.success("Aircraft Removed.")
                         st.rerun()
                 if st.button("Cancel"):
                     st.session_state.profile_delete_confirm = False
