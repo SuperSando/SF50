@@ -32,7 +32,7 @@ def get_backend_connection():
 
 repo = get_backend_connection()
 
-# Initialize session state
+# Initialize session state keys
 if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0
 if "active_df" not in st.session_state:
@@ -55,33 +55,28 @@ if check_password() and repo:
 
         selected_profile = st.selectbox("Select Aircraft", ["+ Create New Profile"] + sorted(profile_names))
         
-        # Reset data if we switch aircraft
         if "last_profile" not in st.session_state:
             st.session_state.last_profile = selected_profile
+        
+        # If we switch aircraft, clear everything
         if st.session_state.last_profile != selected_profile:
             st.session_state.active_df = None
             st.session_state.active_source = ""
             st.session_state.last_profile = selected_profile
+            st.rerun()
 
-        # --- REGISTRATION MODE ---
         if selected_profile == "+ Create New Profile":
+            # ... (Registration Logic remains same)
             st.subheader("🆕 Register New Aircraft")
             new_tail = st.text_input("Tail Number", placeholder="N123SF", key="reg_tail").upper().strip()
             new_sn = st.text_input("Aircraft S/N", placeholder="e.g. 1234", key="reg_sn")
-            
             if st.button("Register Aircraft", use_container_width=True, type="primary"):
                 if new_tail:
-                    try:
-                        repo.create_file(f"data/{new_tail}/.profile", f"Init {new_tail}", f"S/N: {new_sn}")
-                        st.success(f"Profile {new_tail} Created!")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Error: {e}")
-                else:
-                    st.warning("Tail Number is required.")
+                    repo.create_file(f"data/{new_tail}/.profile", f"Init {new_tail}", f"S/N: {new_sn}")
+                    st.success(f"Profile {new_tail} Created!")
+                    st.rerun()
             st.stop()
 
-        # --- ACTIVE MODE ---
         else:
             tail_number = selected_profile
             try:
@@ -91,56 +86,48 @@ if check_password() and repo:
                 aircraft_sn = "N/A"
             
             st.success(f"Active Tail: **{tail_number}**")
-            st.caption(f"Serial Number: {aircraft_sn}")
             st.divider()
 
             # Display Settings
-            st.subheader("🖼️ Display Settings")
-            view_mode = st.radio(
-                "Dashboard Layout",
-                ["Single View", "Split View"],
-                index=1,
-                help="Single View overlays all data. Split View separates Performance from Systems."
-            )
+            view_mode = st.radio("Dashboard Layout", ["Single View", "Split View"], index=1)
             st.divider()
 
-            # --- UPDATED HISTORY LOGIC ---
+            # History Selection
             try:
                 history_files = repo.get_contents(f"data/{tail_number}")
                 history_map = {f.name: f for f in history_files if f.name.endswith(".csv")}
                 
-                # Check if we should override the dropdown selection if a file was just uploaded
-                current_source = st.session_state.active_source
-                
+                # Simple dropdown. We don't try to "force" it to a value.
                 selected_history = st.selectbox(
                     "📜 Flight History", 
                     ["-- Load Previous --"] + sorted(history_map.keys(), reverse=True),
-                    index=0 if not current_source else (sorted(history_map.keys(), reverse=True).index(current_source) + 1 if current_source in history_map else 0)
+                    key="history_selector"
                 )
                 
-                # If user selects a history file, load it into session state
-                if selected_history != "-- Load Previous --" and selected_history != st.session_state.active_source:
-                    with st.spinner("Fetching from cloud..."):
-                        full_file_path = f"data/{tail_number}/{selected_history}"
-                        file_data = repo.get_contents(full_file_path)
-                        st.session_state.active_df = pd.read_csv(io.StringIO(file_data.decoded_content.decode('utf-8')))
-                        st.session_state.active_source = selected_history
-                        st.rerun()
-                elif selected_history == "-- Load Previous --" and st.session_state.active_source != "":
-                    # Allow uploader to keep its data even if history says "Load Previous"
-                    pass
+                # Logic: If user picks a file from history, it becomes the active data
+                if selected_history != "-- Load Previous --":
+                    if st.session_state.active_source != selected_history:
+                        with st.spinner("Loading log..."):
+                            file_data = repo.get_contents(f"data/{tail_number}/{selected_history}")
+                            # Efficient reading for larger files
+                            raw_bytes = file_data.decoded_content
+                            st.session_state.active_df = pd.read_csv(io.BytesIO(raw_bytes))
+                            st.session_state.active_source = selected_history
+                            st.rerun()
             except:
                 selected_history = "-- Load Previous --"
 
-            # Danger Zone
+            # Delete Logic (Fixed)
             if selected_history != "-- Load Previous --":
                 with st.expander("⚠️ Danger Zone"):
                     confirm_delete = st.checkbox("Confirm Delete")
                     if st.button("🗑️ Delete Log", type="primary", disabled=not confirm_delete):
                         file_to_delete = history_map[selected_history]
                         repo.delete_file(file_to_delete.path, f"Removed {selected_history}", file_to_delete.sha)
+                        # Clear everything and force rerun
                         st.session_state.active_df = None
                         st.session_state.active_source = ""
+                        st.success("Deleted successfully.")
                         st.rerun()
 
             st.divider()
@@ -150,41 +137,27 @@ if check_password() and repo:
                 type="csv", 
                 key=f"uploader_{st.session_state.uploader_key}"
             )
-            upload_btn = st.button("Upload & Process", use_container_width=True, type="primary")
+            if st.button("Upload & Process", use_container_width=True, type="primary"):
+                if uploaded_file:
+                    with st.spinner("Syncing to cloud..."):
+                        processed_df = cleaner.clean_data(uploaded_file)
+                        save_name = uploaded_file.name
+                        file_path = f"data/{tail_number}/{save_name}"
+                        
+                        # Upload to Github
+                        repo.create_file(file_path, f"Add: {save_name}", processed_df.to_csv(index=False))
+                        
+                        # Set as active
+                        st.session_state.active_df = processed_df
+                        st.session_state.active_source = save_name
+                        st.session_state.uploader_key += 1 # Reset uploader
+                        st.rerun()
 
-    # --- 3. DATA UPLOAD LOGIC ---
-    if uploaded_file and upload_btn:
-        with st.spinner("Processing Large Log... This may take a moment."):
-            try:
-                # Clean locally first so data shows up even if GitHub sync is slow
-                processed_df = cleaner.clean_data(uploaded_file)
-                save_name = uploaded_file.name
-                file_path = f"data/{tail_number}/{save_name}"
-                
-                try:
-                    repo.get_contents(file_path)
-                    st.error("This file already exists in the cloud.")
-                except:
-                    # Sync to GitHub
-                    csv_content = processed_df.to_csv(index=False)
-                    repo.create_file(file_path, f"Add: {save_name}", csv_content)
-                    
-                    # Update Session State immediately
-                    st.session_state.active_df = processed_df
-                    st.session_state.active_source = save_name
-                    st.session_state.uploader_key += 1
-                    st.success(f"Success! {save_name} is now active.")
-                    st.rerun()
-            except Exception as e:
-                st.error(f"Processing error: {e}")
-
-    # --- 4. DASHBOARD RENDER ---
+    # --- 3. DASHBOARD ---
     df = st.session_state.active_df
-    active_source = st.session_state.active_source
-
     if df is not None:
         st.title(f"✈️ {tail_number} Analysis")
-        st.caption(f"S/N: {aircraft_sn} | Source: {active_source}")
+        st.caption(f"Source: {st.session_state.active_source}")
         
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Max GS", f"{df['Groundspeed'].max():.0f} kts")
@@ -192,7 +165,6 @@ if check_password() and repo:
         m3.metric("Max N1", f"{df['N1 %'].max():.1f}%")
         m4.metric("Duration", f"{(len(df) / 60):.1f} min")
         
-        # Pass view_mode from sidebar selection
         st.plotly_chart(visualizer.generate_dashboard(df, view_mode=view_mode), use_container_width=True)
     else:
-        st.info(f"Dashboard for **{tail_number}** is empty. Upload a flight log or select one from history.")
+        st.info("Select a log or upload a new one to begin.")
