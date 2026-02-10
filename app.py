@@ -32,7 +32,16 @@ def get_backend():
 
 repo = get_backend()
 
-# Initialize Session State Keys
+# --- NEW: CACHED HISTORY FETCHING ---
+# This prevents the "No logs found" flicker during reruns
+def get_aircraft_history(repo, path):
+    try:
+        contents = repo.get_contents(path)
+        return {f.name: f for f in contents if f.name.endswith(".csv")}
+    except:
+        return {}
+
+# Initialize Session State
 for key, val in [("active_df", None), ("active_source", ""), ("uploader_key", 0), ("delete_confirm", False), ("last_profile", None)]:
     if key not in st.session_state: st.session_state[key] = val
 
@@ -45,12 +54,14 @@ if check_password() and repo:
         
         # Aircraft Selection
         try:
+            # We don't cache the profile list so new aircraft show up immediately
             profile_names = [c.name for c in repo.get_contents("data") if c.type == "dir"]
-        except: profile_names = []
+        except: 
+            profile_names = []
 
         selected_profile = st.selectbox("Select Aircraft", ["+ Create New Profile"] + sorted(profile_names))
         
-        # --- REFRESH LOGIC: If aircraft changes, clear the view ---
+        # --- AUTO-REFRESH LISTENER ---
         if selected_profile != st.session_state.last_profile:
             st.session_state.active_df = None
             st.session_state.active_source = ""
@@ -70,15 +81,20 @@ if check_password() and repo:
         view_mode = st.radio("Display Layout", ["Single View", "Split View"], index=1)
         st.divider()
 
-        # History Management
+        # --- RE-ENGINEERED HISTORY MANAGEMENT ---
         st.subheader("📜 History")
-        try:
-            h_path = f"data/{tail_number}"
-            h_files = repo.get_contents(h_path)
-            h_map = {f.name: f for f in h_files if f.name.endswith(".csv")}
+        h_map = get_aircraft_history(repo, f"data/{tail_number}")
+        
+        if not h_map:
+            st.info(f"Scanning cloud for **{tail_number}**...")
+            # If the dict is empty, we force one more try to prevent the flicker bug
+            if st.button("Refresh History"):
+                st.rerun()
+        else:
             history_list = sorted(h_map.keys(), reverse=True)
             
-            sel_h = st.selectbox("Select Log", ["-- Select a File --"] + history_list)
+            # The key logic: Use a unique key based on the tail_number
+            sel_h = st.selectbox("Select Log", ["-- Select a File --"] + history_list, key=f"hist_{tail_number}")
             
             if sel_h != "-- Select a File --":
                 c1, c2 = st.columns(2)
@@ -103,8 +119,6 @@ if check_password() and repo:
                     if st.button("Cancel"):
                         st.session_state.delete_confirm = False
                         st.rerun()
-        except:
-            st.info("No logs found.")
 
         st.divider()
         # Batch Upload
@@ -115,7 +129,6 @@ if check_password() and repo:
                     for f in up_files:
                         p_df = cleaner.clean_data(f)
                         repo.create_file(f"data/{tail_number}/{f.name}", f"Upload {f.name}", p_df.to_csv(index=False))
-                        # Set the newest (last in loop) as active
                         st.session_state.active_df = p_df
                         st.session_state.active_source = f.name
                 st.session_state.uploader_key += 1
