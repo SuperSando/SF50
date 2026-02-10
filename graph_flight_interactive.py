@@ -2,16 +2,13 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# --- 1. CONFIGURATION ---
-GRAPH_MAPPINGS = {
-    "Groundspeed": "Groundspeed", "Cabin Diff PSI": "Cabin Diff PSI", 
-    "Bld Px PSI": "Bld Px PSI", "Bleed On": "Bleed On", "N1 %": "N1 %", 
-    "N2 %": "N2 %", "ITT (F)": "ITT (F)", "Oil Temp (F)": "Oil Temp (F)", 
-    "Oil Px PSI": "Oil Px PSI", "TLA DEG": "TLA DEG", "TT2 (C)": "TT2 (C)", 
-    "PT2 PSI": "PT2 PSI", "CHPV": "CHPV", "ECS PRI DUCT T (F)": "ECS PRI DUCT T (F)", 
-    "ECS PRI DUCT T2 (F)": "ECS PRI DUCT T2 (F)", "ECS CKPT T (F)": "ECS CKPT T (F)", 
-    "O2 BTL Px PSI": "O2 BTL Px PSI", "O2 VLV Open": "O2 VLV Open", 
-    "EIPS TMP (F)": "EIPS TMP (F)", "EIPS PRS PSI": "EIPS PRS PSI"
+# --- 1. SYSTEM HIERARCHY & COLOR PALETTES ---
+# Grouped by base hue to provide visual unity
+GROUPS = {
+    "Powerplant": {"color": "#D32F2F", "items": ["N1 %", "N2 %", "ITT (F)", "Oil Temp (F)", "Oil Px PSI", "TLA DEG"]},
+    "Environmental": {"color": "#1976D2", "items": ["Cabin Diff PSI", "Bld Px PSI", "Bleed On", "ECS PRI DUCT T (F)", "ECS PRI DUCT T2 (F)", "ECS CKPT T (F)"]},
+    "Airframe/Ice": {"color": "#388E3C", "items": ["EIPS TMP (F)", "EIPS PRS PSI", "TT2 (C)", "PT2 PSI"]},
+    "Avionics/O2": {"color": "#7B1FA2", "items": ["O2 BTL Px PSI", "O2 VLV Open", "CHPV", "Groundspeed"]}
 }
 
 UNITS = {
@@ -25,103 +22,82 @@ UNITS = {
 }
 
 LIMIT_LINES = {
-    "ITT (F)": [(1610, "red", "Max T/O 10sec"), (1583, "orange", "Max T/O 5mins"), (1536, "green", "MCT")], 
-    "N1 %": [(105.7, "red", "Tran. 30sec"), (104.7, "green", "MCT")], 
-    "N2 %": [(101, "red", "Tran. 30sec"), (100, "green", "MCT")], 
+    "ITT (F)": [(1610, "red", "Max T/O"), (1536, "green", "MCT")], 
+    "N1 %": [(104.7, "green", "MCT")], 
+    "N2 %": [(100, "green", "MCT")], 
     "Oil Px PSI": [(120, "green", "max")]
 }
 
-def generate_dashboard(df, view_mode="Single View"):
+def generate_dashboard(df, view_mode="Split View", active_list=None):
     if "Time" in df.columns:
         df["Time"] = pd.to_numeric(df["Time"], errors='coerce')
 
     is_split = "Split View" in view_mode
-    
     if is_split:
         fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03)
-        height = 850
     else:
         fig = make_subplots(rows=1, cols=1, specs=[[{"secondary_y": True}]])
-        height = 800
 
-    colors = ['#2E5BFF', '#FF1744', '#00CC96', '#AB63FA', '#FFA15A', '#19D3F3', '#FF6692', '#B6E880', '#FF97FF', '#FECB52']
-    color_idx = 0
+    # Assigning colors dynamically within groups
+    for g_name, g_info in GROUPS.items():
+        base_color = g_info["color"]
+        for i, title in enumerate(g_info["items"]):
+            if title in df.columns and (active_list is None or title in active_list):
+                val = pd.to_numeric(df[title], errors='coerce')
+                unit = UNITS.get(title, "")
+                
+                # Create variations of the base color for traces in the same group
+                opacity = 1.0 - (i * 0.12) 
+                line_color = base_color # Or use Plotly color scaling
+                
+                row_idx = 1 if unit in ["kts", "°F", "°C"] else 2
+                if not is_split: row_idx = 1
+                is_sec = False if unit in ["kts", "°F", "°C"] else True
 
-    for title, col_name in GRAPH_MAPPINGS.items():
-        if col_name in df.columns:
-            unit = UNITS.get(title, "")
-            line_color = colors[color_idx % len(colors)]
-            
-            # --- UPDATED DEFAULT VISIBILITY ---
-            # Now defaults to N2 % and Bld Px PSI
-            trace_visible = True if title in ["N2 %", "Bld Px PSI"] else 'legendonly'
-
-            row_idx = 1 if unit in ["kts", "°F", "°C"] else 2
-            if not is_split: row_idx = 1
-            is_sec = False if unit in ["kts", "°F", "°C"] else True
-
-            # DATA TRACE
-            fig.add_trace(
-                go.Scatter(
-                    x=df["Time"], y=df[col_name], name=title, mode='lines',
-                    line=dict(color=line_color, width=2.5),
-                    visible=trace_visible,
-                    legendgroup=title,
-                    hoverlabel=dict(
-                        bgcolor="rgba(255, 255, 255, 0.5)", 
-                        bordercolor=line_color,
-                        font=dict(family="Arial Black", size=12, color="black")
+                fig.add_trace(
+                    go.Scatter(
+                        x=df["Time"], y=val, name=title, mode='lines',
+                        line=dict(color=base_color, width=2, dash=None if i < 3 else 'dot'),
+                        legendgroup=g_name, # Grouping in legend
+                        legendgrouptitle_text=g_name if i == 0 else None,
+                        hoverlabel=dict(bgcolor="rgba(255,255,255,0.5)", bordercolor=base_color),
+                        hovertemplate=f"<b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
                     ),
-                    hovertemplate=f"<b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
-                ),
-                row=row_idx if is_split else 1, col=1,
-                secondary_y=is_sec if not is_split else None
-            )
+                    row=row_idx if is_split else 1, col=1,
+                    secondary_y=is_sec if not is_split else None
+                )
 
-            # LIMIT LINES (Linked Visibility)
-            if title in LIMIT_LINES:
-                for val, color, label in LIMIT_LINES[title]:
-                    fig.add_trace(
-                        go.Scatter(
-                            x=[df["Time"].min(), df["Time"].max()], y=[val, val],
-                            mode='lines+text', text=[label, ""], textposition="top right",
-                            line=dict(color=color, width=1, dash='dash'),
-                            hoverinfo='skip', showlegend=False, 
-                            visible=trace_visible,
-                            legendgroup=title
-                        ),
-                        row=row_idx if is_split else 1, col=1,
-                        secondary_y=is_sec if not is_split else None
-                    )
-            color_idx += 1
+                if title in LIMIT_LINES:
+                    for l_val, l_color, l_label in LIMIT_LINES[title]:
+                        fig.add_trace(
+                            go.Scatter(
+                                x=[df["Time"].min(), df["Time"].max()], y=[l_val, l_val],
+                                mode='lines+text', text=[l_label, ""], textposition="top right",
+                                line=dict(color=l_color, width=1, dash='dash'),
+                                hoverinfo='skip', showlegend=False, legendgroup=g_name
+                            ),
+                            row=row_idx if is_split else 1, col=1,
+                            secondary_y=is_sec if not is_split else None
+                        )
 
-    # --- LAYOUT ---
     fig.update_layout(
-        height=height,
-        template="plotly_white",
-        hovermode="x",
-        hoverdistance=-1,
-        spikedistance=-1,
+        height=850, template="plotly_white", hovermode="x",
         margin=dict(l=20, r=20, t=30, b=50),
-        legend=dict(y=0.5, x=1.05),
-        paper_bgcolor="#F8F9FB", 
-        plot_bgcolor="white"
+        legend=dict(groupclick="toggleitem", orientation="v", y=0.5, x=1.02)
     )
 
-    common_x = dict(
-        showspikes=True, spikemode='across', spikesnap='cursor',
-        spikethickness=2, spikedash='dash', spikecolor='black',
-        showline=True, linewidth=1, linecolor='black', mirror=True
-    )
+    common_x = dict(showspikes=True, spikemode='across', spikesnap='cursor',
+                    spikethickness=2, spikedash='dash', spikecolor='black',
+                    showline=True, linewidth=1, linecolor='black', mirror=True)
 
     if is_split:
         fig.update_xaxes(common_x, row=1, col=1, matches='x')
         fig.update_xaxes(common_x, row=2, col=1, title_text="<b>Time (Seconds)</b>", matches='x')
-        fig.update_yaxes(title_text="<b>Temp / Speed</b>", row=1, col=1, showline=True, linecolor='black')
-        fig.update_yaxes(title_text="<b>PSI / % / Deg</b>", row=2, col=1, showline=True, linecolor='black')
+        fig.update_yaxes(title_text="<b>Temp / Speed</b>", row=1, col=1)
+        fig.update_yaxes(title_text="<b>PSI / % / Deg</b>", row=2, col=1)
     else:
         fig.update_xaxes(common_x, title_text="<b>Time (Seconds)</b>")
-        fig.update_yaxes(title_text="<b>Temp / Speed</b>", secondary_y=False, showline=True, linecolor='black')
-        fig.update_yaxes(title_text="<b>PSI / % / Deg</b>", secondary_y=True, showline=True, linecolor='black')
+        fig.update_yaxes(title_text="<b>Temp / Speed</b>", secondary_y=False)
+        fig.update_yaxes(title_text="<b>PSI / % / Deg</b>", secondary_y=True)
 
     return fig
