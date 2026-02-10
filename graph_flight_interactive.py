@@ -2,7 +2,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# --- CONFIGURATION (UNCHANGED) ---
+# --- CONFIGURATION ---
 GRAPH_MAPPINGS = {
     "Groundspeed": "Groundspeed", "Cabin Diff PSI": "Cabin Diff PSI", 
     "Bld Px PSI": "Bld Px PSI", "Bleed On": "Bleed On", "N1 %": "N1 %", 
@@ -45,6 +45,10 @@ def generate_dashboard(df):
     colors = ['#636EFA', '#EF553B', '#00CC96', '#AB63FA', '#FFA15A', '#19D3F3', '#FF6692', '#B6E880', '#FF97FF', '#FECB52']
     color_idx = 0
 
+    # Lists to track what's on each axis for labeling
+    left_axis_labels = []
+    right_axis_labels = []
+
     for title, col_name in GRAPH_MAPPINGS.items():
         if col_name in df.columns:
             df[col_name] = pd.to_numeric(df[col_name], errors='coerce')
@@ -54,6 +58,13 @@ def generate_dashboard(df):
             line_color = colors[color_idx % len(colors)]
             
             trace_visible = True if title in DEFAULT_VISIBLE else 'legendonly'
+
+            # Track labels for visible traces
+            if trace_visible is True:
+                if use_secondary:
+                    right_axis_labels.append(unit)
+                else:
+                    left_axis_labels.append(unit)
 
             fig.add_trace(
                 go.Scatter(
@@ -80,40 +91,41 @@ def generate_dashboard(df):
             
             color_idx += 1
 
+    # Format the dynamic strings
+    left_title = " / ".join(sorted(list(set(left_axis_labels)))) if left_axis_labels else "Primary Value"
+    right_title = " / ".join(sorted(list(set(right_axis_labels)))) if right_axis_labels else "Secondary Value"
+
     fig.update_layout(
         height=800, 
         template="plotly_white", 
         hovermode="x unified",
         hoverdistance=-1, 
-        hoverlabel=dict(
-            bgcolor="rgba(255, 255, 255, 0.95)",
-            font_size=14,
-            font_family="Arial Black"
-        ),
+        hoverlabel=dict(bgcolor="rgba(255, 255, 255, 0.95)", font_size=14, font_family="Arial Black"),
         plot_bgcolor="#f8f9fa", 
         paper_bgcolor="white",    
         legend=dict(title="<b>Click to Toggle:</b>", y=0.99, x=1.05),
         margin=dict(l=20, r=20, t=40, b=20)
     )
 
-    # Vertical spike logic
     fig.update_xaxes(
+        title_text="Time (Seconds)",
         showspikes=True, spikemode='across', spikesnap='cursor', 
         spikethickness=2, spikedash='dash', spikecolor='#555555',
         rangeslider_visible=False, showline=True, linewidth=1, 
         linecolor='black', mirror=True, gridcolor='white'
     )
 
-    # --- UPDATED DYNAMIC Y-GRID ---
     fig.update_yaxes(
-        showgrid=True,           # Enable the background lines
-        gridcolor='#eeeeee',     # Set to very faint grey
-        gridwidth=1,
-        showline=True, 
-        linewidth=1, 
-        linecolor='black', 
-        mirror=True,
-        zeroline=False           # Remove the heavy line at 0 for a cleaner look
+        title_text=f"<b>{left_title}</b>",
+        secondary_y=False,
+        showgrid=True, gridcolor='#eeeeee', gridwidth=1,
+        showline=True, linewidth=1, linecolor='black', mirror=True, zeroline=False
+    )
+
+    fig.update_yaxes(
+        title_text=f"<b>{right_title}</b>",
+        secondary_y=True,
+        showline=True, linewidth=1, linecolor='black', mirror=True, zeroline=False
     )
 
     return fig
