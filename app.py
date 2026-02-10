@@ -5,7 +5,7 @@ import graph_flight_interactive as visualizer
 import io
 from github import Github 
 
-# --- 1. AUTHENTICATION & CONNECTION (Kept standard) ---
+# --- 1. AUTHENTICATION & CONNECTION ---
 def check_password():
     if "password_correct" not in st.session_state:
         st.title("🔒 SF50 Data Access")
@@ -44,7 +44,6 @@ if check_password() and repo:
     with st.sidebar:
         st.title("🚀 SF50 Fleet Control")
         
-        # Aircraft Profile Logic
         try:
             contents = repo.get_contents("data")
             profile_names = [c.name for c in contents if c.type == "dir"]
@@ -62,23 +61,21 @@ if check_password() and repo:
         view_mode = st.radio("Dashboard Layout", ["Single View", "Split View"], index=1)
         st.divider()
 
-        # --- REWRITTEN HISTORY & DELETE LOGIC ---
+        # --- HISTORY & DELETE LOGIC ---
         st.subheader("📜 Flight History")
         try:
             history_files = repo.get_contents(f"data/{tail_number}")
             history_map = {f.name: f for f in history_files if f.name.endswith(".csv")}
             history_list = sorted(history_map.keys(), reverse=True)
             
-            # The Selector
             selected_history = st.selectbox("Select Log", ["-- Select a File --"] + history_list)
             
             if selected_history != "-- Select a File --":
-                # 1. THE ACTION BUTTONS (Always visible once a file is chosen)
                 col1, col2 = st.columns(2)
                 
-                # LOAD BUTTON
-                if col1.button("📊 Load Graph", use_container_width=True, type="primary"):
-                    with st.spinner("Pulling 12MB log from cloud..."):
+                # OPEN BUTTON (Modified)
+                if col1.button("Open", use_container_width=True, type="primary"):
+                    with st.spinner("Opening 12MB log..."):
                         file_data = repo.get_contents(f"data/{tail_number}/{selected_history}")
                         raw_bytes = file_data.decoded_content
                         st.session_state.active_df = pd.read_csv(io.BytesIO(raw_bytes))
@@ -101,7 +98,7 @@ if check_password() and repo:
                     if st.button("Cancel"):
                         st.session_state.delete_confirm = False
                         st.rerun()
-        except Exception as e:
+        except Exception:
             st.info("No flight history found for this aircraft.")
 
         st.divider()
@@ -123,7 +120,6 @@ if check_password() and repo:
         st.title(f"✈️ {tail_number} Analysis")
         st.caption(f"File: {st.session_state.active_source}")
         
-        # Metrics
         m = st.columns(4)
         m[0].metric("Max GS", f"{df['Groundspeed'].max():.0f} kts")
         m[1].metric("Peak ITT", f"{df['ITT (F)'].max():.0f} °F")
@@ -132,4 +128,4 @@ if check_password() and repo:
         
         st.plotly_chart(visualizer.generate_dashboard(df, view_mode=view_mode), use_container_width=True)
     else:
-        st.info("👈 Select a flight log from the history or upload a new one to begin.")
+        st.info("👈 Select a flight log and click **Open** to begin.")
