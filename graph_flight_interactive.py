@@ -26,6 +26,13 @@ UNITS = {
     "EIPS PRS PSI": "psi"
 }
 
+# --- THE FIX: AXIS MAPPING BY UNIT ---
+# True = Right Axis, False = Left Axis
+AXIS_MAP = {
+    "kts": False, "°F": False, "°C": False, # Temps and Speeds on the Left
+    "psi": True, "%": True, "°": True, "1=ON": True, "1=OPEN": True, "V": True # Everything else on Right
+}
+
 LIMIT_LINES = {
     "ITT (F)": [(1610, "red", "Max T/O 10sec"), (1583, "orange", "Max T/O 5mins"), (1536, "green", "MCT")], 
     "N1 %": [(105.7, "red", "Tran. 30sec"), (104.7, "green", "MCT")], 
@@ -34,29 +41,24 @@ LIMIT_LINES = {
 }
 
 X_AXIS_COL = "Time"
-# Items below this threshold go to the Right Axis (Pressures/%)
-# Items above this go to the Left Axis (Temps/Speeds)
-BIG_NUMBER_THRESHOLD = 500
 
 def generate_dashboard(df):
     if X_AXIS_COL in df.columns:
          df[X_AXIS_COL] = pd.to_numeric(df[X_AXIS_COL], errors='coerce')
     
     fig = make_subplots(specs=[[{"secondary_y": True}]])
-
     colors = ['#636EFA', '#EF553B', '#00CC96', '#AB63FA', '#FFA15A', '#19D3F3', '#FF6692', '#B6E880', '#FF97FF', '#FECB52']
     color_idx = 0
 
     for title, col_name in GRAPH_MAPPINGS.items():
         if col_name in df.columns:
             df[col_name] = pd.to_numeric(df[col_name], errors='coerce')
-            max_val = df[col_name].max()
-            
-            # Logic for which axis to use
-            use_secondary = not (max_val > BIG_NUMBER_THRESHOLD)
             unit = UNITS.get(title, "") 
-            line_color = colors[color_idx % len(colors)]
             
+            # Decide axis based on unit mapping
+            use_secondary = AXIS_MAP.get(unit, False)
+            
+            line_color = colors[color_idx % len(colors)]
             trace_visible = True if title in DEFAULT_VISIBLE else 'legendonly'
 
             fig.add_trace(
@@ -83,51 +85,34 @@ def generate_dashboard(df):
                     )
             color_idx += 1
 
-    # --- FORCED LIGHT MODE UI ---
     fig.update_layout(
-        height=800, 
-        template="plotly_white", 
-        hovermode="x unified",
+        height=800, template="plotly_white", hovermode="x unified",
         hoverdistance=-1, 
-        hoverlabel=dict(
-            bgcolor="white", 
-            font_size=14, 
-            font_family="Arial Black", 
-            font_color="black"
-        ),
-        plot_bgcolor="white", 
-        paper_bgcolor="white",
-        font=dict(color="black"),
+        hoverlabel=dict(bgcolor="white", font_size=14, font_family="Arial Black", font_color="black"),
+        plot_bgcolor="white", paper_bgcolor="white", font=dict(color="black"),
         legend=dict(title="<b>Parameters:</b>", y=0.99, x=1.05, font=dict(color="black")),
         margin=dict(l=20, r=20, t=40, b=20)
     )
 
     fig.update_xaxes(
-        title_text="<b>Time (Seconds)</b>",
-        title_font=dict(color="black"),
-        tickfont=dict(color="black"),
+        title_text="<b>Time (Seconds)</b>", showline=True, linewidth=1, 
+        linecolor='black', mirror=True, gridcolor='#F0F2F6',
         showspikes=True, spikemode='across', spikesnap='cursor', 
-        spikethickness=2, spikedash='dash', spikecolor='#555555',
-        showline=True, linewidth=1, linecolor='black', mirror=True, gridcolor='#F0F2F6'
+        spikethickness=2, spikedash='dash', spikecolor='#555555'
     )
 
-    # Left Axis: Primarily for high-range values (Temps, Speeds)
+    # Left Axis: Temperature and Speed
     fig.update_yaxes(
-        title_text="<b>Temperature (°F/°C) / Speed (kts)</b>",
-        title_font=dict(color="black"),
-        tickfont=dict(color="black"),
-        secondary_y=False,
-        showgrid=True, gridcolor='#F0F2F6', gridwidth=1,
-        showline=True, linewidth=1, linecolor='black', mirror=True, zeroline=False
+        title_text="<b>Temp (°F/°C) / Speed (kts)</b>",
+        secondary_y=False, showgrid=True, gridcolor='#F0F2F6', 
+        showline=True, linecolor='black', mirror=True, zeroline=False
     )
 
-    # Right Axis: Primarily for low-range values (PSI, %, Degrees)
+    # Right Axis: Pressure, Percentage, and Mechanical Degree
     fig.update_yaxes(
-        title_text="<b>Pressure (psi) / Percentage (%) / TLA (°)</b>",
-        title_font=dict(color="black"),
-        tickfont=dict(color="black"),
-        secondary_y=True,
-        showline=True, linewidth=1, linecolor='black', mirror=True, zeroline=False
+        title_text="<b>PSI / % / Degree (°)</b>",
+        secondary_y=True, showline=True, linecolor='black', 
+        mirror=True, zeroline=False
     )
 
     return fig
