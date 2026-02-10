@@ -4,7 +4,6 @@ import clean_flight_data as cleaner
 import graph_flight_interactive as visualizer
 import io
 import requests
-import time
 from github import Github 
 
 # --- 1. AUTHENTICATION ---
@@ -33,7 +32,7 @@ def get_backend():
 
 repo = get_backend()
 
-# Initialize Session State
+# Initialize Session State Keys
 for key, val in [("active_df", None), ("active_source", ""), ("uploader_key", 0), ("delete_confirm", False), ("last_profile", None)]:
     if key not in st.session_state: st.session_state[key] = val
 
@@ -44,14 +43,14 @@ if check_password() and repo:
     with st.sidebar:
         st.title("🚀 SF50 Fleet Control")
         
+        # Aircraft Selection
         try:
             profile_names = [c.name for c in repo.get_contents("data") if c.type == "dir"]
-        except: 
-            profile_names = []
+        except: profile_names = []
 
         selected_profile = st.selectbox("Select Aircraft", ["+ Create New Profile"] + sorted(profile_names))
         
-        # --- AUTO-REFRESH: If aircraft changes, clear the dashboard ---
+        # --- REFRESH LOGIC ---
         if selected_profile != st.session_state.last_profile:
             st.session_state.active_df = None
             st.session_state.active_source = ""
@@ -60,39 +59,45 @@ if check_password() and repo:
 
         if selected_profile == "+ Create New Profile":
             st.subheader("🆕 Register New Aircraft")
-            new_tail = st.text_input("Tail Number").upper().strip()
-            if st.button("Register Aircraft", use_container_width=True):
-                if new_tail:
-                    repo.create_file(f"data/{new_tail}/.profile", "init", "Registered")
+            new_tail = st.text_input("Tail Number (e.g. N123SF)").upper().strip()
+            # RESTORED: S/N Field
+            new_sn = st.text_input("Aircraft S/N (e.g. 1234)") 
+            
+            if st.button("Register Aircraft", use_container_width=True, type="primary"):
+                if new_tail and new_sn:
+                    repo.create_file(f"data/{new_tail}/.profile", f"Init {new_tail}", f"S/N: {new_sn}")
+                    st.success(f"Registered {new_tail}")
                     st.rerun()
+                else:
+                    st.warning("Please enter both Tail and S/N")
             st.stop()
+
+        # Display Active S/N for context
+        try:
+            profile_data = repo.get_contents(f"data/{selected_profile}/.profile")
+            sn_display = profile_data.decoded_content.decode()
+            st.caption(f"✅ **Active Profile:** {selected_profile} ({sn_display})")
+        except:
+            pass
 
         tail_number = selected_profile
         view_mode = st.radio("Display Layout", ["Single View", "Split View"], index=1)
         st.divider()
 
-        # --- RESILIENT HISTORY MANAGEMENT ---
+        # --- HISTORY ---
         st.subheader("📜 History")
         h_map = {}
-        
-        # We try to get contents. If it fails once, we don't immediately show "No logs found"
         try:
             h_path = f"data/{tail_number}"
             contents = repo.get_contents(h_path)
             h_map = {f.name: f for f in contents if f.name.endswith(".csv")}
-        except Exception:
-            # Silent fail here; we'll check h_map below
-            pass
+        except: pass
             
         if not h_map:
-            # Double Check: Sometimes GitHub takes a second to respond to a new directory request
-            st.info("No logs found. If you just uploaded, wait a moment.")
-            if st.button("🔍 Check Again"):
-                st.rerun()
+            st.info("No logs found.")
+            if st.button("🔍 Check Again"): st.rerun()
         else:
             history_list = sorted(h_map.keys(), reverse=True)
-            
-            # Use unique key to prevent dropdown ghosting
             sel_h = st.selectbox("Select Log", ["-- Select a File --"] + history_list, key=f"hist_{tail_number}")
             
             if sel_h != "-- Select a File --":
@@ -108,11 +113,10 @@ if check_password() and repo:
                     st.session_state.delete_confirm = True
 
                 if st.session_state.delete_confirm:
-                    st.warning("Delete permanently?")
-                    if st.button("Yes, Confirm"):
+                    st.warning("Delete?")
+                    if st.button("Yes"):
                         repo.delete_file(h_map[sel_h].path, "Del", h_map[sel_h].sha)
                         st.session_state.active_df = None
-                        st.session_state.active_source = ""
                         st.session_state.delete_confirm = False
                         st.rerun()
                     if st.button("Cancel"):
@@ -120,16 +124,15 @@ if check_password() and repo:
                         st.rerun()
 
         st.divider()
-        # Batch Upload
+        # Upload
         up_files = st.file_uploader("Upload CSVs", type="csv", accept_multiple_files=True, key=f"up_{st.session_state.uploader_key}")
         if st.button("Sync & Open", use_container_width=True):
             if up_files:
-                with st.spinner("Syncing files..."):
-                    for f in up_files:
-                        p_df = cleaner.clean_data(f)
-                        repo.create_file(f"data/{tail_number}/{f.name}", f"Upload {f.name}", p_df.to_csv(index=False))
-                        st.session_state.active_df = p_df
-                        st.session_state.active_source = f.name
+                for f in up_files:
+                    p_df = cleaner.clean_data(f)
+                    repo.create_file(f"data/{tail_number}/{f.name}", f"Upload {f.name}", p_df.to_csv(index=False))
+                    st.session_state.active_df = p_df
+                    st.session_state.active_source = f.name
                 st.session_state.uploader_key += 1
                 st.rerun()
 
@@ -145,5 +148,3 @@ if check_password() and repo:
         m[3].metric("Duration", f"{(len(df) / 60):.1f} min")
         
         st.plotly_chart(visualizer.generate_dashboard(df, view_mode=view_mode), use_container_width=True)
-    else:
-        st.info("👈 Open a log from history or upload data to begin.")
