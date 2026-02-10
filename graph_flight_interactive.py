@@ -29,7 +29,6 @@ PANE_MAP = {
     "psi": 2, "%": 2, "°": 2, "1=ON": 2, "1=OPEN": 2, "V": 2 
 }
 
-# --- RESTORED ALL LIMIT LINES ---
 LIMIT_LINES = {
     "ITT (F)": [(1610, "red", "Max T/O 10sec"), (1583, "orange", "Max T/O 5mins"), (1536, "green", "MCT")], 
     "N1 %": [(105.7, "red", "Tran. 30sec"), (104.7, "green", "MCT")], 
@@ -45,8 +44,8 @@ def generate_dashboard(df, view_mode="Single View"):
         fig = make_subplots(
             rows=2, cols=1, 
             shared_xaxes=True, 
-            vertical_spacing=0.08,
-            subplot_titles=("<b>PERFORMANCE & ENVIRONMENT</b>", "<b>SYSTEMS HEALTH & LOGIC</b>")
+            vertical_spacing=0.04, # Tightened since titles are gone
+            subplot_titles=(None, None) # TITLES REMOVED
         )
         height = 950
     else:
@@ -98,7 +97,7 @@ def generate_dashboard(df, view_mode="Single View"):
         hoverlabel=dict(bgcolor="white", font_size=14, font_family="Arial Black", font_color="black"),
         plot_bgcolor="white", paper_bgcolor="white", font=dict(color="black"),
         legend=dict(title="<b>Parameters:</b>", y=0.5, x=1.05, yanchor="middle"),
-        margin=dict(l=20, r=20, t=60, b=20)
+        margin=dict(l=20, r=20, t=40, b=20) # Slightly smaller top margin
     )
 
     spike_style = dict(
