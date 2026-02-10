@@ -41,8 +41,7 @@ def generate_dashboard(df, view_mode="Single View"):
          df["Time"] = pd.to_numeric(df["Time"], errors='coerce')
 
     fig = go.Figure()
-
-    colors = ['#2E5BFF', '#FF1744', '#00E676', '#D500F9', '#FF9100', '#00B0FF', '#FFEA00', '#1DE9B6']
+    colors = ['#2E5BFF', '#FF1744', '#00CC96', '#AB63FA', '#FFA15A', '#19D3F3', '#FF6692', '#B6E880', '#FF97FF', '#FECB52']
     color_idx = 0
 
     for title, col_name in GRAPH_MAPPINGS.items():
@@ -52,30 +51,27 @@ def generate_dashboard(df, view_mode="Single View"):
             line_color = colors[color_idx % len(colors)]
             trace_visible = True if title in ["ITT (F)", "N1 %", "Groundspeed"] else 'legendonly'
 
-            # Logic for "Single" vs "Split" View
             if "Split View" in view_mode:
                 target_yaxis = PANE_MAP.get(unit, "y2")
             else:
-                # In Single mode, we use y1 for everything, but psi/% can use y2 for secondary scale if you prefer
                 target_yaxis = "y1" if unit in ["kts", "°F", "°C"] else "y2"
 
             fig.add_trace(
                 go.Scatter(
                     x=df["Time"], y=df[col_name], name=title, mode='lines', 
                     visible=trace_visible, legendgroup=title,
-                    yaxis=target_yaxis.replace("y", "y") if target_yaxis != "y1" else "y",
+                    yaxis="y2" if target_yaxis == "y2" else "y",
                     line=dict(color=line_color, width=2.5),
                     hovertemplate=f"<b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
                 )
             )
 
-            # Limit Lines
             if title in LIMIT_LINES:
                 for val, color, label in LIMIT_LINES[title]:
                     fig.add_trace(
                         go.Scatter(
                             x=[df["Time"].min(), df["Time"].max()], y=[val, val],
-                            yaxis=target_yaxis.replace("y", "y") if target_yaxis != "y1" else "y",
+                            yaxis="y2" if target_yaxis == "y2" else "y",
                             mode='lines+text', text=[label, ""], textposition="top right",
                             line=dict(color=color, width=1, dash='dash'),
                             name=label, legendgroup=title, showlegend=False, 
@@ -84,8 +80,10 @@ def generate_dashboard(df, view_mode="Single View"):
                     )
             color_idx += 1
 
-    # --- THE LAYOUT "DOMAIN" TRICK ---
-    layout_update = dict(
+    # --- THE LAYOUT FIX ---
+    is_split = "Split View" in view_mode
+    
+    layout_config = dict(
         height=900,
         template="plotly_white",
         hovermode="x unified",
@@ -94,43 +92,41 @@ def generate_dashboard(df, view_mode="Single View"):
         hoverlabel=dict(bgcolor="white", font_size=14, font_family="Arial Black", font_color="black"),
         plot_bgcolor="white", paper_bgcolor="white", font=dict(color="black"),
         legend=dict(title="<b>Parameters:</b>", y=0.5, x=1.05, yanchor="middle"),
-        margin=dict(l=20, r=20, t=20, b=20),
+        margin=dict(l=20, r=20, t=20, b=50),
         
-        # ONE X-AXIS FOR EVERYTHING
+        # X-AXIS: Anchored to the very bottom
         xaxis=dict(
             title_text="<b>Time (Seconds)</b>",
+            anchor="y2" if is_split else "y", # THIS MOVES THE AXIS TO THE BOTTOM
             showgrid=True, gridcolor='#F0F2F6',
             showspikes=True, spikemode='across', spikesnap='cursor',
             spikethickness=2, spikedash='dash', spikecolor='#555555',
             showline=True, linewidth=1, linecolor='black', mirror=True
         ),
         
-        # Y-AXIS 1: THE TOP HALF (Performance)
+        # Y-AXIS 1: Top half
         yaxis=dict(
             title_text="<b>Temp / Speed</b>",
-            domain=[0.52, 1], # Occupies top 48%
+            domain=[0.54, 1] if is_split else [0, 1],
             gridcolor='#F0F2F6', zeroline=False, showline=True, linecolor='black'
         )
     )
 
-    if "Split View" in view_mode:
-        # Y-AXIS 2: THE BOTTOM HALF (Systems)
-        layout_update["yaxis2"] = dict(
+    if is_split:
+        # Y-AXIS 2: Bottom half
+        layout_config["yaxis2"] = dict(
             title_text="<b>PSI / % / Deg</b>",
-            domain=[0, 0.48], # Occupies bottom 48%
-            gridcolor='#F0F2F6', zeroline=False, showline=True, linecolor='black',
-            anchor="x"
+            domain=[0, 0.46],
+            gridcolor='#F0F2F6', zeroline=False, showline=True, linecolor='black'
         )
     else:
-        # SINGLE VIEW: Overlay them or just use one.
-        # Here we set yaxis2 to overlay so we keep the two-scale look but in one box.
-        layout_update["yaxis2"] = dict(
+        # SINGLE VIEW: Secondary scale on the right
+        layout_config["yaxis2"] = dict(
             title_text="<b>PSI / % / Deg</b>",
             overlaying="y",
             side="right",
             zeroline=False, showline=True, linecolor='black'
         )
-        layout_update["yaxis"]["domain"] = [0, 1] # Expand top axis to full height
 
-    fig.update_layout(layout_update)
+    fig.update_layout(layout_config)
     return fig
