@@ -2,7 +2,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# --- 1. ORIGINAL CONFIGURATION ---
+# --- 1. CONFIGURATION ---
 GRAPH_MAPPINGS = {
     "Groundspeed": "Groundspeed", "Cabin Diff PSI": "Cabin Diff PSI", 
     "Bld Px PSI": "Bld Px PSI", "Bleed On": "Bleed On", "N1 %": "N1 %", 
@@ -38,29 +38,35 @@ def generate_dashboard(df_input, view_mode="Split View"):
 
     is_split = "Split View" in view_mode
     
+    # Initialize Subplots
     if is_split:
         fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05)
     else:
         fig = make_subplots(rows=1, cols=1, specs=[[{"secondary_y": True}]])
 
     colors = ['#2E5BFF', '#FF1744', '#00CC96', '#AB63FA', '#FFA15A', '#19D3F3', '#FF6692', '#B6E880', '#FF97FF', '#FECB52', 
-              '#636EFA', '#EF553B', '#00CC96', '#AB63FA', '#FFA15A', '#19D3F3', '#FF6692', '#B6E880', '#FF97FF', '#FECB52']
+              '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
     
     for i, (title, col_name) in enumerate(GRAPH_MAPPINGS.items()):
         if col_name in df.columns:
+            # Prepare data
             data = pd.to_numeric(df[col_name], errors='coerce')
             unit = UNITS.get(title, "")
             line_color = colors[i % len(colors)]
-            
-            # Visibility: N2 and Bld Px by default
             is_visible = True if title in ["N2 %", "Bld Px PSI"] else 'legendonly'
 
-            # Define Row and Axis
-            is_engine = unit in ["kts", "°F", "°C"]
-            row = 1 if (is_engine or not is_split) else 2
-            sec_y = (not is_engine) if not is_split else False
+            # --- CRITICAL COORDINATE MATH ---
+            # Group 1 (Top/Primary): Speeds and Temps
+            # Group 2 (Bottom/Secondary): Pressure and Percentages
+            is_perf_group = unit in ["kts", "°F", "°C"]
+            
+            # Map to Row
+            target_row = 1 if (is_perf_group or not is_split) else 2
+            
+            # Map to Secondary Y (Only applies in Single View)
+            target_sec_y = (not is_perf_group) if not is_split else False
 
-            # Trace
+            # 1. ADD DATA TRACE
             fig.add_trace(
                 go.Scatter(
                     x=df["Time"], y=data, name=title, mode='lines',
@@ -68,40 +74,49 @@ def generate_dashboard(df_input, view_mode="Split View"):
                     visible=is_visible,
                     hovertemplate=f"<b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
                 ),
-                row=row, col=1, secondary_y=sec_y
+                row=target_row, col=1, secondary_y=target_sec_y
             )
 
-            # Limits
+            # 2. ADD LIMIT LINES (Locked to identical Row/Sec_Y as the trace above)
             if title in LIMIT_LINES:
                 for l_val, l_color, l_label in LIMIT_LINES[title]:
                     fig.add_trace(
                         go.Scatter(
                             x=[df["Time"].min(), df["Time"].max()], y=[l_val, l_val],
-                            mode='lines+text', text=[f" {l_label}", ""], textposition="top right",
+                            mode='lines+text', 
+                            text=[f" {l_label}", ""], 
+                            textposition="top right",
                             line=dict(color=l_color, width=1.5, dash='dash'),
-                            hoverinfo='skip', showlegend=False, visible=is_visible
+                            hoverinfo='skip', 
+                            showlegend=False, 
+                            visible=is_visible
                         ),
-                        row=row, col=1, secondary_y=sec_y
+                        row=target_row, col=1, secondary_y=target_sec_y
                     )
 
+    # Styling and Interaction
     fig.update_layout(
-        height=800, template="plotly_white", hovermode="x",
+        height=850,
+        template="plotly_white",
+        hovermode="x",
         margin=dict(l=60, r=60, t=30, b=50),
-        legend=dict(y=0.5, x=1.05)
+        legend=dict(y=0.5, x=1.05, font=dict(size=10))
     )
 
-    common_x = dict(showspikes=True, spikemode='across', spikesnap='cursor',
-                    spikethickness=2, spikedash='dash', spikecolor='black',
-                    showline=True, linecolor='black', mirror=True)
+    common_x = dict(
+        showspikes=True, spikemode='across', spikesnap='cursor',
+        spikethickness=2, spikedash='dash', spikecolor='#444',
+        showline=True, linecolor='black', mirror=True
+    )
 
     if is_split:
         fig.update_xaxes(common_x, row=1, col=1, matches='x')
         fig.update_xaxes(common_x, row=2, col=1, title_text="Time (Seconds)", matches='x')
-        fig.update_yaxes(title_text="Temp / Speed", row=1, col=1)
-        fig.update_yaxes(title_text="PSI / % / Deg", row=2, col=1)
+        fig.update_yaxes(title_text="<b>Performance / Temp</b>", row=1, col=1)
+        fig.update_yaxes(title_text="<b>Systems / PSI / %</b>", row=2, col=1)
     else:
         fig.update_xaxes(common_x, title_text="Time (Seconds)")
-        fig.update_yaxes(title_text="Temp / Speed", secondary_y=False)
-        fig.update_yaxes(title_text="PSI / % / Deg", secondary_y=True)
+        fig.update_yaxes(title_text="<b>Performance / Temp</b>", secondary_y=False)
+        fig.update_yaxes(title_text="<b>Systems / PSI / %</b>", secondary_y=True)
 
     return fig
