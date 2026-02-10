@@ -6,7 +6,7 @@ import io
 import requests
 from github import Github 
 
-# --- 1. AUTH ---
+# --- AUTH ---
 def check_password():
     if "password_correct" not in st.session_state:
         st.set_page_config(page_title="SF50 Login", page_icon="🔒")
@@ -28,15 +28,18 @@ def get_backend():
 
 repo = get_backend()
 
-# Initialize Session State
-for key, val in [("active_df", None), ("active_source", ""), ("uploader_key", 0), ("delete_confirm", False)]:
-    if key not in st.session_state: st.session_state[key] = val
+# Initialize session state keys
+for key in ["active_df", "active_source", "uploader_key", "delete_confirm"]:
+    if key not in st.session_state:
+        st.session_state[key] = None if "df" in key else "" if "source" in key else 0 if "key" in key else False
 
 if check_password() and repo:
     st.set_page_config(layout="wide", page_title="Vision Jet Analytics", page_icon="✈️")
 
     with st.sidebar:
         st.title("🚀 SF50 Fleet Control")
+        
+        # Load Aircraft Profiles
         try:
             profile_names = [c.name for c in repo.get_contents("data") if c.type == "dir"]
         except: profile_names = []
@@ -52,55 +55,59 @@ if check_password() and repo:
 
         tail_number = selected_profile
         view_mode = st.radio("Display Layout", ["Single View", "Split View"], index=1)
-        
-        st.subheader("📊 Data Selection")
-        param_groups = {
-            "🚀 Powerplant": ["N1 %", "N2 %", "ITT (F)", "Oil Temp (F)", "Oil Px PSI", "TLA DEG"],
-            "🌬️ Environmental": ["Cabin Diff PSI", "Bld Px PSI", "Bleed On", "ECS PRI DUCT T (F)", "ECS PRI DUCT T2 (F)", "ECS CKPT T (F)"],
-            "🛡️ Ice & Air": ["EIPS TMP (F)", "EIPS PRS PSI", "TT2 (C)", "PT2 PSI"],
-            "⚙️ Misc": ["O2 BTL Px PSI", "O2 VLV Open", "CHPV", "Groundspeed"]
-        }
-
-        selected_params = []
-        for g_name, items in param_groups.items():
-            with st.expander(g_name, expanded=(g_name == "🚀 Powerplant")):
-                for item in items:
-                    default_on = item in ["N2 %", "Bld Px PSI"]
-                    if st.checkbox(item, value=default_on, key=f"sb_{item}"):
-                        selected_params.append(item)
-
         st.divider()
+
+        # History Section
         st.subheader("📜 History")
         try:
-            h_files = repo.get_contents(f"data/{tail_number}")
+            h_path = f"data/{tail_number}"
+            h_files = repo.get_contents(h_path)
             h_map = {f.name: f for f in h_files if f.name.endswith(".csv")}
-            sel_h = st.selectbox("Select Log", ["-- Select --"] + sorted(h_map.keys(), reverse=True))
+            h_list = sorted(h_map.keys(), reverse=True)
+            
+            sel_h = st.selectbox("Select Log", ["-- Select --"] + h_list)
+            
             if sel_h != "-- Select --":
                 c1, c2 = st.columns(2)
-                if c1.button("Open", use_container_width=True):
-                    resp = requests.get(h_map[sel_h].download_url)
-                    st.session_state.active_df = pd.read_csv(io.BytesIO(resp.content))
-                    st.session_state.active_source = sel_h
-                    st.rerun()
-                if c2.button("Delete", use_container_width=True):
-                    repo.delete_file(h_map[sel_h].path, "Del", h_map[sel_h].sha)
-                    st.session_state.active_df = None
-                    st.rerun()
-        except: st.info("No logs found.")
+                if c1.button("Open", use_container_width=True, type="primary"):
+                    with st.spinner("Downloading..."):
+                        resp = requests.get(h_map[sel_h].download_url)
+                        st.session_state.active_df = pd.read_csv(io.BytesIO(resp.content))
+                        st.session_state.active_source = sel_h
+                        st.rerun()
+                
+                if c2.button("🗑️ Delete", use_container_width=True):
+                    st.session_state.delete_confirm = True
+
+                if st.session_state.delete_confirm:
+                    st.warning("Delete permanently?")
+                    if st.button("Confirm Delete"):
+                        repo.delete_file(h_map[sel_h].path, "Del", h_map[sel_h].sha)
+                        st.session_state.active_df = None
+                        st.session_state.active_source = ""
+                        st.session_state.delete_confirm = False
+                        st.rerun()
+                    if st.button("Cancel"):
+                        st.session_state.delete_confirm = False
+                        st.rerun()
+        except:
+            st.info("No logs found.")
 
         st.divider()
+        # Upload Section
         up_files = st.file_uploader("Upload CSVs", type="csv", accept_multiple_files=True, key=f"up_{st.session_state.uploader_key}")
         if st.button("Sync & Open", use_container_width=True):
             if up_files:
                 for f in up_files:
                     p_df = cleaner.clean_data(f)
                     repo.create_file(f"data/{tail_number}/{f.name}", f"Upload {f.name}", p_df.to_csv(index=False))
+                    # Auto-open newest
                     st.session_state.active_df = p_df
                     st.session_state.active_source = f.name
                 st.session_state.uploader_key += 1
                 st.rerun()
 
-    # --- MAIN DISPLAY ---
+    # --- DASHBOARD ---
     df = st.session_state.active_df
     if df is not None:
         st.title(f"✈️ {tail_number} Analysis")
@@ -111,6 +118,6 @@ if check_password() and repo:
         m[2].metric("Max N1", f"{df['N1 %'].max():.1f}%")
         m[3].metric("Duration", f"{(len(df) / 60):.1f} min")
         
-        st.plotly_chart(visualizer.generate_dashboard(df, view_mode=view_mode, active_list=selected_params), use_container_width=True)
+        st.plotly_chart(visualizer.generate_dashboard(df, view_mode=view_mode), use_container_width=True)
     else:
-        st.info("👈 Open a log from history or upload a new one.")
+        st.info("👈 Open a log from the sidebar to begin.")
