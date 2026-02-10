@@ -6,10 +6,10 @@ import io
 import requests
 from github import Github 
 
-# --- AUTH ---
+# --- 1. AUTHENTICATION ---
 def check_password():
     if "password_correct" not in st.session_state:
-        st.set_page_config(page_title="SF50 Login", page_icon="🔒")
+        st.set_page_config(page_title="SF50 Dashboard", page_icon="✈️")
         st.title("🔒 SF50 Data Access")
         st.text_input("Enter Password", type="password", key="password_input")
         if st.button("Log In"):
@@ -32,28 +32,38 @@ def get_backend():
 
 repo = get_backend()
 
-# Initialize Session State
-for key, val in [("active_df", None), ("active_source", ""), ("uploader_key", 0), ("delete_confirm", False)]:
+# Initialize Session State Keys
+for key, val in [("active_df", None), ("active_source", ""), ("uploader_key", 0), ("delete_confirm", False), ("last_profile", None)]:
     if key not in st.session_state: st.session_state[key] = val
 
+# --- 2. MAIN APP ---
 if check_password() and repo:
     st.set_page_config(layout="wide", page_title="Vision Jet Analytics", page_icon="✈️")
 
     with st.sidebar:
         st.title("🚀 SF50 Fleet Control")
         
-        # Load Aircraft
+        # Aircraft Selection
         try:
             profile_names = [c.name for c in repo.get_contents("data") if c.type == "dir"]
         except: profile_names = []
 
         selected_profile = st.selectbox("Select Aircraft", ["+ Create New Profile"] + sorted(profile_names))
         
+        # --- REFRESH LOGIC: If aircraft changes, clear the view ---
+        if selected_profile != st.session_state.last_profile:
+            st.session_state.active_df = None
+            st.session_state.active_source = ""
+            st.session_state.last_profile = selected_profile
+            st.rerun()
+
         if selected_profile == "+ Create New Profile":
+            st.subheader("🆕 Register New Aircraft")
             new_tail = st.text_input("Tail Number").upper().strip()
             if st.button("Register Aircraft", use_container_width=True):
-                repo.create_file(f"data/{new_tail}/.profile", "init", "Registered")
-                st.rerun()
+                if new_tail:
+                    repo.create_file(f"data/{new_tail}/.profile", "init", "Registered")
+                    st.rerun()
             st.stop()
 
         tail_number = selected_profile
@@ -94,19 +104,20 @@ if check_password() and repo:
                         st.session_state.delete_confirm = False
                         st.rerun()
         except:
-            st.info("No logs found for this tail.")
+            st.info("No logs found.")
 
         st.divider()
         # Batch Upload
         up_files = st.file_uploader("Upload CSVs", type="csv", accept_multiple_files=True, key=f"up_{st.session_state.uploader_key}")
         if st.button("Sync & Open", use_container_width=True):
             if up_files:
-                for f in up_files:
-                    p_df = cleaner.clean_data(f)
-                    repo.create_file(f"data/{tail_number}/{f.name}", f"Upload {f.name}", p_df.to_csv(index=False))
-                    # Set the newest as active
-                    st.session_state.active_df = p_df
-                    st.session_state.active_source = f.name
+                with st.spinner("Syncing files..."):
+                    for f in up_files:
+                        p_df = cleaner.clean_data(f)
+                        repo.create_file(f"data/{tail_number}/{f.name}", f"Upload {f.name}", p_df.to_csv(index=False))
+                        # Set the newest (last in loop) as active
+                        st.session_state.active_df = p_df
+                        st.session_state.active_source = f.name
                 st.session_state.uploader_key += 1
                 st.rerun()
 
