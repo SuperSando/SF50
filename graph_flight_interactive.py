@@ -1,7 +1,7 @@
 import pandas as pd
 import plotly.graph_objects as go
 
-# --- 1. CONFIGURATION ---
+# --- CONFIGURATION (ITT, N1, N2, Oil Px limits) ---
 GRAPH_MAPPINGS = {
     "Groundspeed": "Groundspeed", "Cabin Diff PSI": "Cabin Diff PSI", 
     "Bld Px PSI": "Bld Px PSI", "Bleed On": "Bleed On", "N1 %": "N1 %", 
@@ -21,11 +21,6 @@ UNITS = {
     "ECS PRI DUCT T2 (F)": "°F", "ECS CKPT T (F)": "°F", 
     "O2 BTL Px PSI": "psi", "O2 VLV Open": "1=OPEN", "EIPS TMP (F)": "°F", 
     "EIPS PRS PSI": "psi"
-}
-
-PANE_MAP = {
-    "kts": "y1", "°F": "y1", "°C": "y1", 
-    "psi": "y2", "%": "y2", "°": "y2", "1=ON": "y2", "1=OPEN": "y2", "V": "y2" 
 }
 
 LIMIT_LINES = {
@@ -56,22 +51,22 @@ def generate_dashboard(df, view_mode="Single View"):
             else:
                 target_yaxis = "y" if unit in ["kts", "°F", "°C"] else "y2"
 
-            # --- DYNAMIC COLORED HOVER BOXES ---
             fig.add_trace(
                 go.Scatter(
                     x=df["Time"], y=df[col_name], name=title, mode='lines', 
                     visible=trace_visible, legendgroup=title,
                     yaxis=target_yaxis.replace("y", "y") if target_yaxis != "y" else "y",
                     line=dict(color=line_color, width=2.5),
-                    # Translucent fill + Color-coded border
+                    # --- FIXED TRANSLUCENT HOVER ---
                     hoverlabel=dict(
-                        bgcolor="rgba(255, 255, 255, 0.85)", 
+                        bgcolor="rgba(255, 255, 255, 0.7)", # Frosted effect
                         bordercolor=line_color,
                         font_size=13, 
                         font_family="Arial Black",
-                        font_color="black"
+                        font_color="black",
+                        namelength=-1 # Shows full parameter name
                     ),
-                    hovertemplate=f"<b>{title}</b><br>%{{y:.1f}} {unit}<extra></extra>"
+                    hovertemplate=f"<b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
                 )
             )
 
@@ -81,7 +76,7 @@ def generate_dashboard(df, view_mode="Single View"):
                         go.Scatter(
                             x=[df["Time"].min(), df["Time"].max()], y=[val, val],
                             yaxis=target_yaxis.replace("y", "y") if target_yaxis != "y" else "y",
-                            mode='lines+text', text=[label, ""], textposition="top right",
+                            mode='lines',
                             line=dict(color=color, width=1, dash='dash'),
                             name=label, legendgroup=title, showlegend=False, 
                             visible=trace_visible, hoverinfo='skip'
@@ -89,12 +84,11 @@ def generate_dashboard(df, view_mode="Single View"):
                     )
             color_idx += 1
 
-    # --- LAYOUT CONFIGURATION ---
+    # --- LAYOUT FIX FOR SIMULTANEOUS LABELS ---
     layout_config = dict(
         height=800,
         template="plotly_white",
-        # 'x' mode triggers all traces at the current X coordinate simultaneously
-        hovermode="x", 
+        hovermode="x", # NOT "x unified" - "x" allows per-trace boxes
         hoverdistance=-1,
         spikedistance=-1,
         plot_bgcolor="white", paper_bgcolor="white", font=dict(color="black"),
@@ -124,7 +118,7 @@ def generate_dashboard(df, view_mode="Single View"):
             gridcolor='#F0F2F6', zeroline=False, showline=True, linecolor='black', mirror=True,
             anchor="free", position=0
         )
-        # DIVIDER
+        
         layout_config["shapes"] = [
             dict(type="line", xref="paper", yref="paper", x0=0, x1=1, y0=0.5, y1=0.5,
                  line=dict(color="black", width=1))
