@@ -1,1 +1,1 @@
-Registered
+S/N: 888
