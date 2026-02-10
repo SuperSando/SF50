@@ -35,7 +35,7 @@ def generate_dashboard(df_input, view_mode="Split View"):
     df = df_input.copy()
     if "Time" in df.columns:
         df["Time"] = pd.to_numeric(df["Time"], errors='coerce')
-        # Create MM:SS formatted time for the hover labels
+        # Create MM:SS formatted time
         df["Time_MMSS"] = df["Time"].apply(lambda s: f"{int(s//60):02d}:{int(s%60):02d}" if pd.notnull(s) else "00:00")
     else:
         df["Time"] = range(len(df))
@@ -64,7 +64,7 @@ def generate_dashboard(df_input, view_mode="Split View"):
             row = 1 if (is_perf or not is_split) else 2
             sec_y = (not is_perf) if not is_split else False
 
-            # Add Data
+            # Trace
             fig.add_trace(
                 go.Scatter(
                     x=df["Time"], 
@@ -74,14 +74,19 @@ def generate_dashboard(df_input, view_mode="Split View"):
                     line=dict(color=line_color, width=3),
                     visible=is_visible,
                     legendgroup=title,
-                    # Customdata allows us to pass the MM:SS string to the hover box
                     customdata=df["Time_MMSS"],
-                    hovertemplate=f"<b>Time: %{{customdata}}</b><br><b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
+                    # THE FIX: Added the <span> marker to show the trace color in the box
+                    hovertemplate=(
+                        "<b>Time: %{customdata}</b><br>"
+                        "<span style='color:" + line_color + "'>●</span> "
+                        "<b>%{fullData.name}</b>: %{y:.1f} " + unit +
+                        "<extra></extra>"
+                    )
                 ),
                 row=row, col=1, secondary_y=sec_y
             )
 
-            # Add Limits
+            # Limits
             if title in LIMIT_LINES:
                 for l_val, l_color, l_label in LIMIT_LINES[title]:
                     fig.add_trace(
@@ -118,11 +123,11 @@ def generate_dashboard(df_input, view_mode="Split View"):
 
     if is_split:
         fig.update_xaxes(common_x, row=1, col=1, matches='x')
-        fig.update_xaxes(common_x, row=2, col=1, title_text="Time (Seconds)", matches='x')
+        fig.update_xaxes(common_x, row=2, col=1, title_text="Time (MM:SS)", matches='x')
         fig.update_yaxes(title_text="<b>Performance / Temp</b>", row=1, col=1)
         fig.update_yaxes(title_text="<b>Systems / PSI / %</b>", row=2, col=1)
     else:
-        fig.update_xaxes(common_x, title_text="Time (Seconds)")
+        fig.update_xaxes(common_x, title_text="Time (MM:SS)")
         fig.update_yaxes(title_text="<b>Performance / Temp</b>", secondary_y=False)
         fig.update_yaxes(title_text="<b>Systems / PSI / %</b>", secondary_y=True)
 
