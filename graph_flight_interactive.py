@@ -32,8 +32,10 @@ AXIS_MAP = {
 }
 
 LIMIT_LINES = {
-    "ITT (F)": [(1610, "#FF0033", "MAX T/O"), (1536, "#00CC66", "MCT")], 
-    "N1 %": [(105.7, "#FF0033", "LIMIT"), (104.7, "#00CC66", "MCT")]
+    "ITT (F)": [(1610, "red", "Max T/O 10sec"), (1583, "orange", "Max T/O 5mins"), (1536, "green", "MCT")], 
+    "N1 %": [(105.7, "red", "Tran. 30sec"), (104.7, "green", "MCT")], 
+    "N2 %": [(101, "red", "Tran. 30sec"), (100, "green", "MCT")], 
+    "Oil Px PSI": [(120, "green", "max")]
 }
 
 def generate_dashboard(df):
@@ -42,7 +44,7 @@ def generate_dashboard(df):
     
     fig = make_subplots(specs=[[{"secondary_y": True}]])
     
-    # Modern "Cyber" Palette
+    # High-contrast modern palette
     colors = ['#2E5BFF', '#FF1744', '#00E676', '#D500F9', '#FF9100', '#00B0FF', '#FFEA00', '#1DE9B6']
     color_idx = 0
 
@@ -54,7 +56,7 @@ def generate_dashboard(df):
             line_color = colors[color_idx % len(colors)]
             trace_visible = True if title in DEFAULT_VISIBLE else 'legendonly'
 
-            # 1. Main Trace with Smoothing and Shadow
+            # 1. Main Trace (Slightly thicker for modern feel)
             fig.add_trace(
                 go.Scatter(
                     x=df["Time"], y=df[col_name], 
@@ -62,75 +64,71 @@ def generate_dashboard(df):
                     mode='lines', 
                     visible=trace_visible, 
                     legendgroup=title,
-                    line=dict(
-                        color=line_color, 
-                        width=3, 
-                        shape='spline', # Makes the lines smooth/modern
-                        smoothing=1.3
-                    ),
+                    line=dict(color=line_color, width=2.5),
                     hovertemplate=f"<b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
                 ),
                 secondary_y=use_secondary, 
             )
 
-            # 2. Refined Limit Lines
+            # 2. RESTORED: Limit Lines with visible Text Labels
             if title in LIMIT_LINES:
                 for val, color, label in LIMIT_LINES[title]:
                     fig.add_trace(
                         go.Scatter(
-                            x=[df["Time"].min(), df["Time"].max()], y=[val, val],
-                            mode='lines', 
-                            line=dict(color=color, width=1, dash='dot'),
-                            name=label, legendgroup=title, showlegend=False, 
-                            visible=trace_visible, hoverinfo='skip'
+                            x=[df["Time"].min(), df["Time"].max()], 
+                            y=[val, val],
+                            mode='lines+text', # Restoration of the labels
+                            text=[label, ""], 
+                            textposition="top right",
+                            line=dict(color=color, width=1, dash='dash'),
+                            name=label, 
+                            legendgroup=title, 
+                            showlegend=False, 
+                            visible=trace_visible, 
+                            hoverinfo='skip'
                         ),
                         secondary_y=use_secondary 
                     )
             color_idx += 1
 
     fig.update_layout(
-        height=850,
+        height=800,
         template="plotly_white",
         hovermode="x unified",
+        hoverdistance=-1,
         hoverlabel=dict(
-            bgcolor="rgba(255, 255, 255, 0.98)",
-            font_size=15,
-            font_family="Monospace", # Monospace looks more "instrumental"
-            font_color="#1A1A1A",
-            bordercolor="#D1D1D1"
+            bgcolor="rgba(255, 255, 255, 0.95)",
+            font_size=14,
+            font_family="Arial Black",
+            font_color="black"
         ),
-        # Pure Light Theme Hardening
-        plot_bgcolor="#FFFFFF",
-        paper_bgcolor="#FFFFFF",
-        font=dict(family="Inter, sans-serif", color="#263238"),
-        
-        legend=dict(
-            title="<b>SYSTEM PARAMETERS</b>",
-            y=1, x=1.02,
-            bgcolor="rgba(255,255,255,0)",
-            bordercolor="#ECEFF1",
-            borderwidth=1
-        ),
-        margin=dict(l=80, r=80, t=50, b=50)
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        font=dict(color="black"),
+        legend=dict(title="<b>Parameters:</b>", y=0.99, x=1.05),
+        margin=dict(l=20, r=20, t=40, b=20)
     )
 
-    # Clean, modern axes
+    # RESTORED: Original Axis Titles & Dashed Vertical Strike-Line
     fig.update_xaxes(
-        title_text="<b>ELAPSED TIME (SEC)</b>",
-        showgrid=True, gridcolor='#F5F5F5',
+        title_text="<b>Time (Seconds)</b>",
+        showgrid=True, gridcolor='#F0F2F6',
         showspikes=True, spikemode='across', spikesnap='cursor', 
-        spikethickness=1, spikedash='dash', spikecolor='#B0BEC5'
+        spikethickness=2, spikedash='dash', spikecolor='#555555',
+        showline=True, linewidth=1, linecolor='black', mirror=True
     )
 
     fig.update_yaxes(
-        title_text="<b>ENV / PERFORMANCE</b>",
-        secondary_y=False, showgrid=True, gridcolor='#F5F5F5',
-        zeroline=False, tickformat=".1f"
+        title_text="<b>Temp (°F/°C) / Speed (kts)</b>",
+        secondary_y=False,
+        showgrid=True, gridcolor='#F0F2F6',
+        showline=True, linewidth=1, linecolor='black', mirror=True, zeroline=False
     )
 
     fig.update_yaxes(
-        title_text="<b>SYSTEMS / LOGIC</b>",
-        secondary_y=True, zeroline=False, tickformat=".1f"
+        title_text="<b>PSI / % / Degree (°)</b>",
+        secondary_y=True,
+        showline=True, linewidth=1, linecolor='black', mirror=True, zeroline=False
     )
 
     return fig
