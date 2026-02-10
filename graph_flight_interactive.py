@@ -43,6 +43,8 @@ def generate_dashboard(df, view_mode="Single View"):
     colors = ['#2E5BFF', '#FF1744', '#00CC96', '#AB63FA', '#FFA15A', '#19D3F3', '#FF6692', '#B6E880', '#FF97FF', '#FECB52']
     color_idx = 0
 
+    is_split = "Split View" in view_mode
+
     for title, col_name in GRAPH_MAPPINGS.items():
         if col_name in df.columns:
             df[col_name] = pd.to_numeric(df[col_name], errors='coerce')
@@ -50,17 +52,18 @@ def generate_dashboard(df, view_mode="Single View"):
             line_color = colors[color_idx % len(colors)]
             trace_visible = True if title in ["ITT (F)", "N1 %", "Groundspeed"] else 'legendonly'
 
-            # Logic for "Single" vs "Split" View
-            if "Split View" in view_mode:
-                target_yaxis = PANE_MAP.get(unit, "y2")
-            else:
-                target_yaxis = "y1" if unit in ["kts", "°F", "°C"] else "y2"
+            # Logic for axis assignment
+            target_pane = PANE_MAP.get(unit, "y2") if is_split else ("y1" if unit in ["kts", "°F", "°C"] else "y2")
+            
+            # If in split mode, top pane traces need to use xaxis2 to get that top border
+            xaxis_ref = "x2" if (is_split and target_pane == "y1") else "x"
 
             fig.add_trace(
                 go.Scatter(
                     x=df["Time"], y=df[col_name], name=title, mode='lines', 
                     visible=trace_visible, legendgroup=title,
-                    yaxis="y2" if target_yaxis == "y2" else "y",
+                    xaxis=xaxis_ref,
+                    yaxis="y2" if target_pane == "y2" else "y",
                     line=dict(color=line_color, width=2.5),
                     hovertemplate=f"<b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
                 )
@@ -71,7 +74,8 @@ def generate_dashboard(df, view_mode="Single View"):
                     fig.add_trace(
                         go.Scatter(
                             x=[df["Time"].min(), df["Time"].max()], y=[val, val],
-                            yaxis="y2" if target_yaxis == "y2" else "y",
+                            xaxis=xaxis_ref,
+                            yaxis="y2" if target_pane == "y2" else "y",
                             mode='lines+text', text=[label, ""], textposition="top right",
                             line=dict(color=color, width=1, dash='dash'),
                             name=label, legendgroup=title, showlegend=False, 
@@ -80,46 +84,56 @@ def generate_dashboard(df, view_mode="Single View"):
                     )
             color_idx += 1
 
-    is_split = "Split View" in view_mode
-    
+    # --- SHARED SPIKE CONFIG ---
+    spike_cfg = dict(
+        showspikes=True, spikemode='across', spikesnap='cursor',
+        spikethickness=2, spikedash='dash', spikecolor='#555555',
+        showline=True, linewidth=1, linecolor='black', mirror=True
+    )
+
     layout_config = dict(
-        height=800, # FIXED: Reduced height
+        height=800,
         template="plotly_white", 
         hovermode="x unified",
-        hoverdistance=-1,
-        spikedistance=-1,
-        hoverlabel=dict(bgcolor="white", font_size=14, font_family="Arial Black", font_color="black"),
+        hoverdistance=-1, spikedistance=-1,
         plot_bgcolor="white", paper_bgcolor="white", font=dict(color="black"),
         legend=dict(title="<b>Parameters:</b>", y=0.5, x=1.05, yanchor="middle"),
         margin=dict(l=20, r=20, t=30, b=50),
         
+        # BOTTOM X-AXIS
         xaxis=dict(
             title_text="<b>Time (Seconds)</b>",
             anchor="y2" if is_split else "y",
-            showgrid=True, gridcolor='#F0F2F6',
-            showspikes=True, spikemode='across', spikesnap='cursor',
-            spikethickness=2, spikedash='dash', spikecolor='#555555',
-            showline=True, linewidth=1, linecolor='black', mirror=True # Mirror adds the top line back
+            gridcolor='#F0F2F6',
+            **spike_cfg
         ),
         
+        # TOP Y-AXIS
         yaxis=dict(
             title_text="<b>Temp / Speed</b>",
-            domain=[0.52, 1] if is_split else [0, 1],
-            gridcolor='#F0F2F6', zeroline=False, showline=True, linecolor='black', mirror=True
+            domain=[0.53, 1] if is_split else [0, 1],
+            gridcolor='#F0F2F6', zeroline=False, showline=True, linecolor='black'
         )
     )
 
     if is_split:
+        # SECOND X-AXIS (The "Floor" for the upper plot)
+        layout_config["xaxis2"] = dict(
+            matches='x', # Syncs zoom/pan
+            anchor='y',  # Anchors to the top plot
+            showticklabels=False, # Hide labels so it doesn't look messy
+            **spike_cfg
+        )
+        # BOTTOM Y-AXIS
         layout_config["yaxis2"] = dict(
             title_text="<b>PSI / % / Deg</b>",
-            domain=[0, 0.48], # Tighter vertical gap
-            gridcolor='#F0F2F6', zeroline=False, showline=True, linecolor='black', mirror=True
+            domain=[0, 0.47],
+            gridcolor='#F0F2F6', zeroline=False, showline=True, linecolor='black'
         )
     else:
         layout_config["yaxis2"] = dict(
             title_text="<b>PSI / % / Deg</b>",
-            overlaying="y",
-            side="right",
+            overlaying="y", side="right",
             zeroline=False, showline=True, linecolor='black'
         )
 
