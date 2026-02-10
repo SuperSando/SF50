@@ -37,7 +37,6 @@ def generate_dashboard(df, view_mode="Single View"):
 
     is_split = "Split View" in view_mode
     
-    # 1. ARCHITECTURE: Back to subplots for correct axis management
     if is_split:
         fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03)
         height = 850
@@ -52,13 +51,10 @@ def generate_dashboard(df, view_mode="Single View"):
         if col_name in df.columns:
             unit = UNITS.get(title, "")
             line_color = colors[color_idx % len(colors)]
+            # Visibility logic: Default ITT, N1, and GS to visible
             trace_visible = True if title in ["ITT (F)", "N1 %", "Groundspeed"] else 'legendonly'
 
-            # Define Row (Split View)
-            row_idx = 1 if unit in ["kts", "°F", "°C"] else 2
-            if not is_split: row_idx = 1
-            
-            # Define Secondary Y (Single View)
+            row_idx = 1 if unit in ["kts", "°F", "°C"] else (2 if is_split else 1)
             is_sec = False if unit in ["kts", "°F", "°C"] else True
 
             # DATA TRACE
@@ -67,10 +63,9 @@ def generate_dashboard(df, view_mode="Single View"):
                     x=df["Time"], y=df[col_name], name=title, mode='lines',
                     line=dict(color=line_color, width=2.5),
                     visible=trace_visible,
-                    legendgroup=title,
-                    # TRANSLUCENT BOXES
+                    legendgroup=title, # Link to legend group
                     hoverlabel=dict(
-                        bgcolor="rgba(255, 255, 255, 0.5)", 
+                        bgcolor="rgba(255, 255, 255, 0.4)", # Deep translucency (60% transparent)
                         bordercolor=line_color,
                         font=dict(family="Arial Black", size=12, color="black")
                     ),
@@ -80,7 +75,7 @@ def generate_dashboard(df, view_mode="Single View"):
                 secondary_y=is_sec if not is_split else None
             )
 
-            # LIMIT LINES (Restored with Labels)
+            # LIMIT LINES (Linked to the Parent Trace)
             if title in LIMIT_LINES:
                 for val, color, label in LIMIT_LINES[title]:
                     fig.add_trace(
@@ -88,24 +83,26 @@ def generate_dashboard(df, view_mode="Single View"):
                             x=[df["Time"].min(), df["Time"].max()], y=[val, val],
                             mode='lines+text', text=[label, ""], textposition="top right",
                             line=dict(color=color, width=1, dash='dash'),
-                            hoverinfo='skip', showlegend=False, visible=trace_visible
+                            hoverinfo='skip', 
+                            showlegend=False, 
+                            visible=trace_visible, # LINKED VISIBILITY
+                            legendgroup=title      # LINKED TO LEGEND TOGGLE
                         ),
                         row=row_idx, col=1
                     )
             color_idx += 1
 
-    # 2. THE FIX FOR SYNCED INTERACTION
+    # --- SHARED SPIKE & INTERACTION ---
     fig.update_layout(
         height=height,
         template="plotly_white",
-        hovermode="x", # Shows boxes for all active traces at that X
+        hovermode="x",
         hoverdistance=-1,
         spikedistance=-1,
         margin=dict(l=20, r=20, t=30, b=50),
         legend=dict(y=0.5, x=1.05)
     )
 
-    # Spike & Axis Configuration
     common_x = dict(
         showspikes=True, spikemode='across', spikesnap='cursor',
         spikethickness=2, spikedash='dash', spikecolor='black',
@@ -113,7 +110,6 @@ def generate_dashboard(df, view_mode="Single View"):
     )
 
     if is_split:
-        # 'matches' is the key to syncing the spikeline and hover boxes across subplots
         fig.update_xaxes(common_x, row=1, col=1, matches='x')
         fig.update_xaxes(common_x, row=2, col=1, title_text="<b>Time (Seconds)</b>", matches='x')
         fig.update_yaxes(title_text="<b>Temp / Speed</b>", row=1, col=1, showline=True, linecolor='black')
