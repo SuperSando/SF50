@@ -43,7 +43,6 @@ def generate_dashboard(df_input, view_mode="Split View"):
     else:
         fig = make_subplots(rows=1, cols=1, specs=[[{"secondary_y": True}]])
 
-    # Distinct 20-color palette
     colors = [
         '#2E5BFF', '#FF1744', '#00CC96', '#AB63FA', '#FFA15A', '#19D3F3', '#FF6692', '#B6E880', '#FF97FF', '#FECB52', 
         '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'
@@ -60,19 +59,20 @@ def generate_dashboard(df_input, view_mode="Split View"):
             row = 1 if (is_perf or not is_split) else 2
             sec_y = (not is_perf) if not is_split else False
 
-            # Add Data
+            # Trace
             fig.add_trace(
                 go.Scatter(
                     x=df["Time"], y=data, name=title, mode='lines',
-                    line=dict(color=line_color, width=3), # Slightly thicker lines
+                    line=dict(color=line_color, width=3),
                     visible=is_visible,
                     legendgroup=title,
-                    hovertemplate=f"<b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
+                    # THE FIX: Added %{x} to include the timestamp in the box
+                    hovertemplate=f"<b>Time: %{{x}}s</b><br><b>{title}</b>: %{{y:.1f}} {unit}<extra></extra>"
                 ),
                 row=row, col=1, secondary_y=sec_y
             )
 
-            # Add Limits
+            # Limits
             if title in LIMIT_LINES:
                 for l_val, l_color, l_label in LIMIT_LINES[title]:
                     fig.add_trace(
@@ -92,17 +92,14 @@ def generate_dashboard(df_input, view_mode="Split View"):
         template="plotly_white",
         hovermode="x",
         margin=dict(l=60, r=60, t=30, b=50),
-        # --- ENHANCED LEGEND ---
         legend=dict(
-            y=0.5, 
-            x=1.05, 
-            font=dict(size=13, color="black"), # Larger, darker font
+            y=0.5, x=1.05, 
+            font=dict(size=13, color="black"),
             bgcolor="rgba(255,255,255,0.8)",
             bordercolor="Black",
             borderwidth=1,
-            itemclick="toggle", # Standard toggle
-            itemdoubleclick="toggleothers", # Double click to isolate one trace
-            itemsizing="constant" # Keeps the colored lines in legend easy to see
+            itemclick="toggle",
+            itemdoubleclick="toggleothers"
         )
     )
 
