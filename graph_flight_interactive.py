@@ -34,6 +34,8 @@ LIMIT_LINES = {
 }
 
 X_AXIS_COL = "Time"
+# Items below this threshold go to the Right Axis (Pressures/%)
+# Items above this go to the Left Axis (Temps/Speeds)
 BIG_NUMBER_THRESHOLD = 500
 
 def generate_dashboard(df):
@@ -45,22 +47,17 @@ def generate_dashboard(df):
     colors = ['#636EFA', '#EF553B', '#00CC96', '#AB63FA', '#FFA15A', '#19D3F3', '#FF6692', '#B6E880', '#FF97FF', '#FECB52']
     color_idx = 0
 
-    left_axis_labels = []
-    right_axis_labels = []
-
     for title, col_name in GRAPH_MAPPINGS.items():
         if col_name in df.columns:
             df[col_name] = pd.to_numeric(df[col_name], errors='coerce')
             max_val = df[col_name].max()
+            
+            # Logic for which axis to use
             use_secondary = not (max_val > BIG_NUMBER_THRESHOLD)
             unit = UNITS.get(title, "") 
             line_color = colors[color_idx % len(colors)]
             
             trace_visible = True if title in DEFAULT_VISIBLE else 'legendonly'
-
-            if trace_visible is True:
-                if use_secondary: right_axis_labels.append(unit)
-                else: left_axis_labels.append(unit)
 
             fig.add_trace(
                 go.Scatter(
@@ -84,37 +81,39 @@ def generate_dashboard(df):
                         ),
                         secondary_y=use_secondary 
                     )
-            
             color_idx += 1
 
-    left_title = " / ".join(sorted(list(set(left_axis_labels)))) if left_axis_labels else "Primary Value"
-    right_title = " / ".join(sorted(list(set(right_axis_labels)))) if right_axis_labels else "Secondary Value"
-
+    # --- FORCED LIGHT MODE UI ---
     fig.update_layout(
         height=800, 
-        template="plotly_white", # Hardcoded light template
+        template="plotly_white", 
         hovermode="x unified",
         hoverdistance=-1, 
-        hoverlabel=dict(bgcolor="white", font_size=14, font_family="Arial Black", font_color="black"),
-        plot_bgcolor="white",    # Ensures white background inside plot
-        paper_bgcolor="white",   # Ensures white background around plot
-        font=dict(color="black"), # Forces text to black
-        legend=dict(title="<b>Click to Toggle:</b>", y=0.99, x=1.05, font=dict(color="black")),
+        hoverlabel=dict(
+            bgcolor="white", 
+            font_size=14, 
+            font_family="Arial Black", 
+            font_color="black"
+        ),
+        plot_bgcolor="white", 
+        paper_bgcolor="white",
+        font=dict(color="black"),
+        legend=dict(title="<b>Parameters:</b>", y=0.99, x=1.05, font=dict(color="black")),
         margin=dict(l=20, r=20, t=40, b=20)
     )
 
     fig.update_xaxes(
-        title_text="Time (Seconds)",
+        title_text="<b>Time (Seconds)</b>",
         title_font=dict(color="black"),
         tickfont=dict(color="black"),
         showspikes=True, spikemode='across', spikesnap='cursor', 
         spikethickness=2, spikedash='dash', spikecolor='#555555',
-        rangeslider_visible=False, showline=True, linewidth=1, 
-        linecolor='black', mirror=True, gridcolor='#F0F2F6'
+        showline=True, linewidth=1, linecolor='black', mirror=True, gridcolor='#F0F2F6'
     )
 
+    # Left Axis: Primarily for high-range values (Temps, Speeds)
     fig.update_yaxes(
-        title_text=f"<b>{left_title}</b>",
+        title_text="<b>Temperature (°F/°C) / Speed (kts)</b>",
         title_font=dict(color="black"),
         tickfont=dict(color="black"),
         secondary_y=False,
@@ -122,8 +121,9 @@ def generate_dashboard(df):
         showline=True, linewidth=1, linecolor='black', mirror=True, zeroline=False
     )
 
+    # Right Axis: Primarily for low-range values (PSI, %, Degrees)
     fig.update_yaxes(
-        title_text=f"<b>{right_title}</b>",
+        title_text="<b>Pressure (psi) / Percentage (%) / TLA (°)</b>",
         title_font=dict(color="black"),
         tickfont=dict(color="black"),
         secondary_y=True,
