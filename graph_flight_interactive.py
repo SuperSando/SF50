@@ -23,6 +23,11 @@ UNITS = {
     "EIPS PRS PSI": "psi"
 }
 
+PANE_MAP = {
+    "kts": "y1", "°F": "y1", "°C": "y1", 
+    "psi": "y2", "%": "y2", "°": "y2", "1=ON": "y2", "1=OPEN": "y2", "V": "y2" 
+}
+
 LIMIT_LINES = {
     "ITT (F)": [(1610, "red", "Max T/O 10sec"), (1583, "orange", "Max T/O 5mins"), (1536, "green", "MCT")], 
     "N1 %": [(105.7, "red", "Tran. 30sec"), (104.7, "green", "MCT")], 
@@ -51,19 +56,20 @@ def generate_dashboard(df, view_mode="Single View"):
             else:
                 target_yaxis = "y" if unit in ["kts", "°F", "°C"] else "y2"
 
-            # --- THE TRACE-SPECIFIC HOVER ---
+            # --- DYNAMIC COLORED HOVER BOXES ---
             fig.add_trace(
                 go.Scatter(
                     x=df["Time"], y=df[col_name], name=title, mode='lines', 
                     visible=trace_visible, legendgroup=title,
                     yaxis=target_yaxis.replace("y", "y") if target_yaxis != "y" else "y",
                     line=dict(color=line_color, width=2.5),
-                    # Label Styling: Colored border and bold text
+                    # Translucent fill + Color-coded border
                     hoverlabel=dict(
-                        bordercolor=line_color, 
-                        bgcolor="white", 
+                        bgcolor="rgba(255, 255, 255, 0.85)", 
+                        bordercolor=line_color,
                         font_size=13, 
-                        font_family="Arial Black"
+                        font_family="Arial Black",
+                        font_color="black"
                     ),
                     hovertemplate=f"<b>{title}</b><br>%{{y:.1f}} {unit}<extra></extra>"
                 )
@@ -87,8 +93,8 @@ def generate_dashboard(df, view_mode="Single View"):
     layout_config = dict(
         height=800,
         template="plotly_white",
-        # SWITCHED TO CLOSEST: Shows boxes following each line instead of one big box
-        hovermode="closest", 
+        # 'x' mode triggers all traces at the current X coordinate simultaneously
+        hovermode="x", 
         hoverdistance=-1,
         spikedistance=-1,
         plot_bgcolor="white", paper_bgcolor="white", font=dict(color="black"),
@@ -118,7 +124,7 @@ def generate_dashboard(df, view_mode="Single View"):
             gridcolor='#F0F2F6', zeroline=False, showline=True, linecolor='black', mirror=True,
             anchor="free", position=0
         )
-        # DIVIDER LINE
+        # DIVIDER
         layout_config["shapes"] = [
             dict(type="line", xref="paper", yref="paper", x0=0, x1=1, y0=0.5, y1=0.5,
                  line=dict(color="black", width=1))
