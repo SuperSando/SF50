@@ -65,44 +65,57 @@ if check_password() and repo:
             new_sn = st.text_input("Aircraft S/N") 
             if st.button("Register Aircraft", use_container_width=True, type="primary"):
                 if new_tail and new_sn:
+                    # Create directory and metadata file
                     repo.create_file(f"data/{new_tail}/.profile", f"Init {new_tail}", f"S/N: {new_sn}")
+                    st.success(f"Registered {new_tail}")
                     st.rerun()
             st.stop()
 
-        # --- NEW: MANAGE ACTIVE AIRCRAFT ---
+        # --- AIRCRAFT METADATA DISPLAY ---
         tail_number = selected_profile
-        with st.expander("🛠️ Manage Profile"):
-            try:
-                profile_file = repo.get_contents(f"data/{tail_number}/.profile")
-                current_sn = profile_file.decoded_content.decode().replace("S/N: ", "")
-                st.write(f"Tail: **{tail_number}**")
-                edit_sn = st.text_input("Edit S/N", value=current_sn)
-                
-                if st.button("Update S/N"):
-                    repo.update_file(profile_file.path, f"Update SN {tail_number}", f"S/N: {edit_sn}", profile_file.sha)
-                    st.success("Updated!")
-                    st.rerun()
-                
-                st.divider()
-                if not st.session_state.profile_delete_confirm:
-                    if st.button("🗑️ Delete Aircraft Profile", use_container_width=True):
-                        st.session_state.profile_delete_confirm = True
-                        st.rerun()
+        active_sn = "Unknown"
+        profile_ref = None
+        
+        try:
+            profile_ref = repo.get_contents(f"data/{tail_number}/.profile")
+            active_sn = profile_ref.decoded_content.decode().replace("S/N: ", "")
+        except:
+            st.warning("⚠️ Profile link broken.")
+
+        st.info(f"**Tail:** {tail_number}  \n**S/N:** {active_sn}")
+
+        # --- MANAGE PROFILE SECTION ---
+        with st.expander("🛠️ Manage Profile Settings"):
+            # Update SN
+            new_sn_input = st.text_input("Change Serial Number", value=active_sn if active_sn != "Unknown" else "")
+            if st.button("Save S/N Change"):
+                if profile_ref:
+                    repo.update_file(profile_ref.path, f"Update SN {tail_number}", f"S/N: {new_sn_input}", profile_ref.sha)
                 else:
-                    st.error("Delete all logs & profile?")
-                    if st.button("CONFIRM PERMANENT DELETE"):
-                        # Delete all files in folder
-                        folder_contents = repo.get_contents(f"data/{tail_number}")
-                        for item in folder_contents:
+                    repo.create_file(f"data/{tail_number}/.profile", f"Fix Metadata {tail_number}", f"S/N: {new_sn_input}")
+                st.success("Metadata Updated")
+                st.rerun()
+            
+            st.divider()
+            
+            # Delete Profile
+            if not st.session_state.profile_delete_confirm:
+                if st.button("🗑️ Delete Entire Aircraft", use_container_width=True):
+                    st.session_state.profile_delete_confirm = True
+                    st.rerun()
+            else:
+                st.error("PERMANENTLY DELETE ALL DATA?")
+                if st.button("YES, PURGE AIRCRAFT"):
+                    with st.spinner("Purging files..."):
+                        contents = repo.get_contents(f"data/{tail_number}")
+                        for item in contents:
                             repo.delete_file(item.path, f"Purge {tail_number}", item.sha)
-                        st.success(f"{tail_number} Deleted")
                         st.session_state.last_profile = None
+                        st.success("Aircraft Removed.")
                         st.rerun()
-                    if st.button("Cancel"):
-                        st.session_state.profile_delete_confirm = False
-                        st.rerun()
-            except:
-                st.warning("Profile metadata missing.")
+                if st.button("Cancel"):
+                    st.session_state.profile_delete_confirm = False
+                    st.rerun()
 
         view_mode = st.radio("Display Layout", ["Single View", "Split View"], index=1)
         st.divider()
@@ -117,7 +130,6 @@ if check_password() and repo:
             
         if not h_map:
             st.info("No logs found.")
-            if st.button("🔍 Check Again"): st.rerun()
         else:
             history_list = sorted(h_map.keys(), reverse=True)
             sel_h = st.selectbox("Select Log", ["-- Select a File --"] + history_list, key=f"hist_{tail_number}")
