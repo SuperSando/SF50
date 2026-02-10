@@ -75,7 +75,7 @@ def generate_dashboard(df, view_mode="Single View"):
                     )
             color_idx += 1
 
-    # --- LAYOUT & SHAPES ---
+    # --- LAYOUT CONFIGURATION ---
     layout_config = dict(
         height=800,
         template="plotly_white",
@@ -114,14 +114,14 @@ def generate_dashboard(df, view_mode="Single View"):
             position=0
         )
         
-        # --- NEW: THE HORIZONTAL DIVIDER LINE ---
+        # --- FIXED WEIGHT DIVIDER ---
         layout_config["shapes"] = [
             dict(
                 type="line",
                 xref="paper", yref="paper",
                 x0=0, x1=1,
-                y0=0.5, y1=0.5, # Position exactly in the vertical middle
-                line=dict(color="black", width=2)
+                y0=0.5, y1=0.5, 
+                line=dict(color="black", width=1) # Thinner line to match axes
             )
         ]
     else:
