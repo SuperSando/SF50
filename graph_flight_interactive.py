@@ -23,7 +23,6 @@ UNITS = {
     "EIPS PRS PSI": "psi"
 }
 
-# Mapping: y1 = Top Area, y2 = Bottom Area
 PANE_MAP = {
     "kts": "y1", "°F": "y1", "°C": "y1", 
     "psi": "y2", "%": "y2", "°": "y2", "1=ON": "y2", "1=OPEN": "y2", "V": "y2" 
@@ -51,6 +50,7 @@ def generate_dashboard(df, view_mode="Single View"):
             line_color = colors[color_idx % len(colors)]
             trace_visible = True if title in ["ITT (F)", "N1 %", "Groundspeed"] else 'legendonly'
 
+            # Logic for "Single" vs "Split" View
             if "Split View" in view_mode:
                 target_yaxis = PANE_MAP.get(unit, "y2")
             else:
@@ -80,47 +80,42 @@ def generate_dashboard(df, view_mode="Single View"):
                     )
             color_idx += 1
 
-    # --- THE LAYOUT FIX ---
     is_split = "Split View" in view_mode
     
     layout_config = dict(
-        height=900,
-        template="plotly_white",
+        height=800, # FIXED: Reduced height
+        template="plotly_white", 
         hovermode="x unified",
         hoverdistance=-1,
         spikedistance=-1,
         hoverlabel=dict(bgcolor="white", font_size=14, font_family="Arial Black", font_color="black"),
         plot_bgcolor="white", paper_bgcolor="white", font=dict(color="black"),
         legend=dict(title="<b>Parameters:</b>", y=0.5, x=1.05, yanchor="middle"),
-        margin=dict(l=20, r=20, t=20, b=50),
+        margin=dict(l=20, r=20, t=30, b=50),
         
-        # X-AXIS: Anchored to the very bottom
         xaxis=dict(
             title_text="<b>Time (Seconds)</b>",
-            anchor="y2" if is_split else "y", # THIS MOVES THE AXIS TO THE BOTTOM
+            anchor="y2" if is_split else "y",
             showgrid=True, gridcolor='#F0F2F6',
             showspikes=True, spikemode='across', spikesnap='cursor',
             spikethickness=2, spikedash='dash', spikecolor='#555555',
-            showline=True, linewidth=1, linecolor='black', mirror=True
+            showline=True, linewidth=1, linecolor='black', mirror=True # Mirror adds the top line back
         ),
         
-        # Y-AXIS 1: Top half
         yaxis=dict(
             title_text="<b>Temp / Speed</b>",
-            domain=[0.54, 1] if is_split else [0, 1],
-            gridcolor='#F0F2F6', zeroline=False, showline=True, linecolor='black'
+            domain=[0.52, 1] if is_split else [0, 1],
+            gridcolor='#F0F2F6', zeroline=False, showline=True, linecolor='black', mirror=True
         )
     )
 
     if is_split:
-        # Y-AXIS 2: Bottom half
         layout_config["yaxis2"] = dict(
             title_text="<b>PSI / % / Deg</b>",
-            domain=[0, 0.46],
-            gridcolor='#F0F2F6', zeroline=False, showline=True, linecolor='black'
+            domain=[0, 0.48], # Tighter vertical gap
+            gridcolor='#F0F2F6', zeroline=False, showline=True, linecolor='black', mirror=True
         )
     else:
-        # SINGLE VIEW: Secondary scale on the right
         layout_config["yaxis2"] = dict(
             title_text="<b>PSI / % / Deg</b>",
             overlaying="y",
