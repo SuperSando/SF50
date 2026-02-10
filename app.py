@@ -32,8 +32,9 @@ def get_backend():
 
 repo = get_backend()
 
-# Initialize Session State Keys
-for key, val in [("active_df", None), ("active_source", ""), ("uploader_key", 0), ("delete_confirm", False), ("last_profile", None)]:
+# Initialize Session State
+for key, val in [("active_df", None), ("active_source", ""), ("uploader_key", 0), 
+                 ("delete_confirm", False), ("last_profile", None), ("profile_delete_confirm", False)]:
     if key not in st.session_state: st.session_state[key] = val
 
 # --- 2. MAIN APP ---
@@ -55,32 +56,54 @@ if check_password() and repo:
             st.session_state.active_df = None
             st.session_state.active_source = ""
             st.session_state.last_profile = selected_profile
+            st.session_state.profile_delete_confirm = False
             st.rerun()
 
         if selected_profile == "+ Create New Profile":
             st.subheader("🆕 Register New Aircraft")
-            new_tail = st.text_input("Tail Number (e.g. N123SF)").upper().strip()
-            # RESTORED: S/N Field
-            new_sn = st.text_input("Aircraft S/N (e.g. 1234)") 
-            
+            new_tail = st.text_input("Tail Number").upper().strip()
+            new_sn = st.text_input("Aircraft S/N") 
             if st.button("Register Aircraft", use_container_width=True, type="primary"):
                 if new_tail and new_sn:
                     repo.create_file(f"data/{new_tail}/.profile", f"Init {new_tail}", f"S/N: {new_sn}")
-                    st.success(f"Registered {new_tail}")
                     st.rerun()
-                else:
-                    st.warning("Please enter both Tail and S/N")
             st.stop()
 
-        # Display Active S/N for context
-        try:
-            profile_data = repo.get_contents(f"data/{selected_profile}/.profile")
-            sn_display = profile_data.decoded_content.decode()
-            st.caption(f"✅ **Active Profile:** {selected_profile} ({sn_display})")
-        except:
-            pass
-
+        # --- NEW: MANAGE ACTIVE AIRCRAFT ---
         tail_number = selected_profile
+        with st.expander("🛠️ Manage Profile"):
+            try:
+                profile_file = repo.get_contents(f"data/{tail_number}/.profile")
+                current_sn = profile_file.decoded_content.decode().replace("S/N: ", "")
+                st.write(f"Tail: **{tail_number}**")
+                edit_sn = st.text_input("Edit S/N", value=current_sn)
+                
+                if st.button("Update S/N"):
+                    repo.update_file(profile_file.path, f"Update SN {tail_number}", f"S/N: {edit_sn}", profile_file.sha)
+                    st.success("Updated!")
+                    st.rerun()
+                
+                st.divider()
+                if not st.session_state.profile_delete_confirm:
+                    if st.button("🗑️ Delete Aircraft Profile", use_container_width=True):
+                        st.session_state.profile_delete_confirm = True
+                        st.rerun()
+                else:
+                    st.error("Delete all logs & profile?")
+                    if st.button("CONFIRM PERMANENT DELETE"):
+                        # Delete all files in folder
+                        folder_contents = repo.get_contents(f"data/{tail_number}")
+                        for item in folder_contents:
+                            repo.delete_file(item.path, f"Purge {tail_number}", item.sha)
+                        st.success(f"{tail_number} Deleted")
+                        st.session_state.last_profile = None
+                        st.rerun()
+                    if st.button("Cancel"):
+                        st.session_state.profile_delete_confirm = False
+                        st.rerun()
+            except:
+                st.warning("Profile metadata missing.")
+
         view_mode = st.radio("Display Layout", ["Single View", "Split View"], index=1)
         st.divider()
 
@@ -88,8 +111,7 @@ if check_password() and repo:
         st.subheader("📜 History")
         h_map = {}
         try:
-            h_path = f"data/{tail_number}"
-            contents = repo.get_contents(h_path)
+            contents = repo.get_contents(f"data/{tail_number}")
             h_map = {f.name: f for f in contents if f.name.endswith(".csv")}
         except: pass
             
@@ -103,19 +125,17 @@ if check_password() and repo:
             if sel_h != "-- Select a File --":
                 c1, c2 = st.columns(2)
                 if c1.button("Open", use_container_width=True, type="primary"):
-                    with st.spinner("Downloading..."):
-                        resp = requests.get(h_map[sel_h].download_url)
-                        st.session_state.active_df = pd.read_csv(io.BytesIO(resp.content))
-                        st.session_state.active_source = sel_h
-                        st.rerun()
+                    resp = requests.get(h_map[sel_h].download_url)
+                    st.session_state.active_df = pd.read_csv(io.BytesIO(resp.content))
+                    st.session_state.active_source = sel_h
+                    st.rerun()
                 
-                if c2.button("🗑️ Delete", use_container_width=True):
+                if c2.button("Delete Log", use_container_width=True):
                     st.session_state.delete_confirm = True
 
                 if st.session_state.delete_confirm:
-                    st.warning("Delete?")
-                    if st.button("Yes"):
-                        repo.delete_file(h_map[sel_h].path, "Del", h_map[sel_h].sha)
+                    if st.button("Confirm Log Delete"):
+                        repo.delete_file(h_map[sel_h].path, "Del Log", h_map[sel_h].sha)
                         st.session_state.active_df = None
                         st.session_state.delete_confirm = False
                         st.rerun()
@@ -148,3 +168,5 @@ if check_password() and repo:
         m[3].metric("Duration", f"{(len(df) / 60):.1f} min")
         
         st.plotly_chart(visualizer.generate_dashboard(df, view_mode=view_mode), use_container_width=True)
+    else:
+        st.info("👈 Select a file to begin.")
