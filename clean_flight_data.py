@@ -2,19 +2,52 @@ import pandas as pd
 import numpy as np
 import os
 
-# --- OLD FORMAT CONFIGURATION ---
+# ==========================================
+# --- OLD FORMAT CONFIGURATION (STANDARD CSV) ---
+# ==========================================
 OLD_SKIP_ROWS = 0
 OLD_INDICES = [0, 5, 8, 13, 14, 15] 
-OLD_RENAME_MAP = {0: "Time", 5: "Altitude", 8: "Airspeed", 13: "RPM", 14: "Throttle_Pos", 15: "Fuel_Level"}
+OLD_RENAME_MAP = {
+    0: "Time", 5: "Altitude", 8: "Airspeed", 
+    13: "RPM", 14: "Throttle_Pos", 15: "Fuel_Level"
+}
 OLD_PERCENTAGE_COLS = ["Throttle_Pos", "Fuel_Level"]
 
-# --- NEW FORMAT CONFIGURATION (SF50) ---
+# ==========================================
+# --- NEW FORMAT CONFIGURATION (SF50 TELEMETRY) ---
+# ==========================================
 NEW_SKIP_ROWS = 2
-NEW_INDICES = [0, 5, 11, 14, 17, 20, 23, 26, 29, 32, 35, 38, 41, 44, 83, 86, 89, 98, 101, 107, 110] 
-NEW_RENAME_MAP = {0: "Time", 5: "Groundspeed", 11: "Cabin Diff PSI", 14: "Bld Px PSI", 17: "Bleed On", 20: "N1 %", 23: "N2 %", 26: "ITT (F)", 29: "Oil Temp (F)", 32: "Oil Px PSI", 35: "TLA DEG", 38: "TT2 (C)", 41: "PT2 PSI", 44: "CHPV", 83: "ECS PRI DUCT T (F)", 86: "ECS PRI DUCT T2 (F)", 89: "ECS CKPT T (F)", 98: "O2 BTL Px PSI", 101: "O2 VLV Open", 107: "EIPS TMP (F)", 110: "EIPS PRS PSI"}
+# Corrected indices based on the raw file structure
+NEW_INDICES = [0, 5, 11, 20, 23, 26, 29, 32, 35, 38, 41, 44, 47, 50, 89, 92, 95, 104, 107, 113, 116] 
+
+NEW_RENAME_MAP = {
+    0: "Time", 
+    5: "Groundspeed", 
+    11: "Cabin Diff PSI", 
+    20: "Bld Px PSI",        
+    23: "Bleed On",          
+    26: "N1 %",              
+    29: "N2 %",              
+    32: "ITT (F)",           
+    35: "Oil Temp (F)",      
+    38: "Oil Px PSI",        
+    41: "TLA DEG",           
+    44: "TT2 (C)",           
+    47: "PT2 PSI",           
+    50: "CHPV",              
+    89: "ECS PRI DUCT T (F)",
+    92: "ECS PRI DUCT T2 (F)",
+    95: "ECS CKPT T (F)",    
+    104: "O2 BTL Px PSI",    
+    107: "O2 VLV Open",      
+    113: "EIPS TMP (F)",     
+    116: "EIPS PRS PSI"      
+}
 NEW_PERCENTAGE_COLS = ["N1 %", "N2 %"]
 
+# ==========================================
 # --- ANOMALY REPLACEMENT ---
+# ==========================================
 ANOMALY_FIXES = [
     (9.89999976239994E+24, 9.8) 
 ]
@@ -74,4 +107,4 @@ def clean_data(file_input):
         if col in df.columns:
             df[col] = df[col] * 100
 
-    return df, is_sf50 # Returns the dataframe and a flag for the frontend
+    return df, is_sf50
