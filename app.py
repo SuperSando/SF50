@@ -162,7 +162,8 @@ if check_password() and repo:
         if st.button("Sync & Open", use_container_width=True):
             if up_files:
                 for f in up_files:
-                    p_df = cleaner.clean_data(f)
+                    # THE FIX: Unpack the tuple returned by our updated cleaner script
+                    p_df, is_sf50 = cleaner.clean_data(f) 
                     repo.create_file(f"data/{tail_number}/{f.name}", f"Upload {f.name}", p_df.to_csv(index=False))
                     st.session_state.active_df = p_df
                     st.session_state.active_source = f.name
@@ -174,10 +175,24 @@ if check_password() and repo:
     if df is not None:
         st.title(f"✈️ {tail_number} Analysis")
         st.caption(f"Log: {st.session_state.active_source}")
+        
         m = st.columns(4)
-        m[0].metric("Max GS", f"{df['Groundspeed'].max():.0f} kts")
-        m[1].metric("Peak ITT", f"{df['ITT (F)'].max():.0f} °F")
-        m[2].metric("Max N1", f"{df['N1 %'].max():.1f}%")
+        
+        # THE FIX: Dynamic Metrics based on column availability
+        if "Groundspeed" in df.columns:
+            # SF50 Format
+            m[0].metric("Max GS", f"{df['Groundspeed'].max():.0f} kts")
+            m[1].metric("Peak ITT", f"{df['ITT (F)'].max():.0f} °F")
+            m[2].metric("Max N1", f"{df['N1 %'].max():.1f}%")
+        elif "Airspeed" in df.columns:
+            # Old CSV Format
+            m[0].metric("Max Airspeed", f"{df['Airspeed'].max():.0f} kts")
+            m[1].metric("Max Altitude", f"{df['Altitude'].max():.0f} ft")
+            m[2].metric("Max RPM", f"{df['RPM'].max():.0f} rpm")
+        else:
+            # Fallback
+            m[0].metric("Data Points", len(df))
+            
         m[3].metric("Duration", f"{(len(df) / 60):.1f} min")
         
         st.plotly_chart(visualizer.generate_dashboard(df, view_mode=view_mode), use_container_width=True)
