@@ -3,7 +3,13 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 # --- 1. CONFIGURATION ---
+# Merged mappings to support BOTH the Old CSV and New SF50 Telemetry logs
 GRAPH_MAPPINGS = {
+    # Old Format
+    "Altitude": "Altitude", "Airspeed": "Airspeed", "RPM": "RPM", 
+    "Throttle_Pos": "Throttle_Pos", "Fuel_Level": "Fuel_Level",
+    
+    # New Format (SF50)
     "Groundspeed": "Groundspeed", "Cabin Diff PSI": "Cabin Diff PSI", 
     "Bld Px PSI": "Bld Px PSI", "Bleed On": "Bleed On", "N1 %": "N1 %", 
     "N2 %": "N2 %", "ITT (F)": "ITT (F)", "Oil Temp (F)": "Oil Temp (F)", 
@@ -15,6 +21,10 @@ GRAPH_MAPPINGS = {
 }
 
 UNITS = {
+    # Old Format
+    "Altitude": "ft", "Airspeed": "kts", "RPM": "rpm", "Throttle_Pos": "%", "Fuel_Level": "%",
+    
+    # New Format (SF50)
     "Groundspeed": "kts", "Cabin Diff PSI": "psi", "Bld Px PSI": "psi", 
     "Bleed On": "1=ON", "N1 %": "%", "N2 %": "%", "ITT (F)": "°F", 
     "Oil Temp (F)": "°F", "Oil Px PSI": "psi", "TLA DEG": "°", "TT2 (C)": "°C", 
@@ -25,6 +35,10 @@ UNITS = {
 }
 
 LIMIT_LINES = {
+    # Old Format
+    "RPM": [(2700, "red", "Max"), (2500, "orange", "Caution")],
+    
+    # New Format (SF50)
     "ITT (F)": [(1610.0, "red", "Max T/O 10s"), (1583.0, "orange", "Max T/O 5m"), (1536.0, "green", "MCT")], 
     "N1 %": [(105.7, "red", "Tran. 30s"), (104.7, "green", "MCT")], 
     "N2 %": [(101.0, "red", "Tran. 30s"), (100.0, "green", "MCT")], 
@@ -54,13 +68,16 @@ def generate_dashboard(df_input, view_mode="Split View"):
     ]
     
     for i, (title, col_name) in enumerate(GRAPH_MAPPINGS.items()):
+        # This check ensures it only graphs columns actually present in the data!
         if col_name in df.columns:
             data = pd.to_numeric(df[col_name], errors='coerce')
             unit = UNITS.get(title, "")
             line_color = colors[i % len(colors)]
-            is_visible = True if title in ["N2 %", "Bld Px PSI"] else 'legendonly'
+            
+            # Default visibility set for both formats
+            is_visible = True if title in ["N2 %", "Bld Px PSI", "RPM", "Altitude"] else 'legendonly'
 
-            is_perf = unit in ["kts", "°F", "°C"]
+            is_perf = unit in ["kts", "°F", "°C", "ft"]
             row = 1 if (is_perf or not is_split) else 2
             sec_y = (not is_perf) if not is_split else False
 
@@ -75,7 +92,6 @@ def generate_dashboard(df_input, view_mode="Split View"):
                     visible=is_visible,
                     legendgroup=title,
                     customdata=df["Time_MMSS"],
-                    # THE FIX: Added the <span> marker to show the trace color in the box
                     hovertemplate=(
                         "<b>Time: %{customdata}</b><br>"
                         "<span style='color:" + line_color + "'>●</span> "
