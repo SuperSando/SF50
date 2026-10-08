@@ -157,16 +157,38 @@ if check_password() and repo:
                         st.rerun()
 
         st.divider()
-        # Upload
+        # Batch Upload
         up_files = st.file_uploader("Upload CSVs", type="csv", accept_multiple_files=True, key=f"up_{st.session_state.uploader_key}")
         if st.button("Sync & Open", use_container_width=True):
             if up_files:
-                for f in up_files:
-                    # THE FIX: Unpack the tuple returned by our updated cleaner script
-                    p_df, is_sf50 = cleaner.clean_data(f) 
-                    repo.create_file(f"data/{tail_number}/{f.name}", f"Upload {f.name}", p_df.to_csv(index=False))
-                    st.session_state.active_df = p_df
-                    st.session_state.active_source = f.name
+                with st.spinner("Syncing files..."):
+                    for f in up_files:
+                        p_df, is_sf50 = cleaner.clean_data(f)
+                        file_path = f"data/{tail_number}/{f.name}"
+                        csv_content = p_df.to_csv(index=False)
+                        
+                        try:
+                            # 1. Check if the file already exists in the repo
+                            existing_file = repo.get_contents(file_path)
+                            # If it exists, update it using its existing SHA
+                            repo.update_file(
+                                path=file_path,
+                                message=f"Update {f.name}",
+                                content=csv_content,
+                                sha=existing_file.sha
+                            )
+                        except Exception:
+                            # 2. If it does not exist, create it fresh
+                            repo.create_file(
+                                path=file_path,
+                                message=f"Upload {f.name}",
+                                content=csv_content
+                            )
+                        
+                        # Set active DataFrame and source for display
+                        st.session_state.active_df = p_df
+                        st.session_state.active_source = f.name
+
                 st.session_state.uploader_key += 1
                 st.rerun()
 
