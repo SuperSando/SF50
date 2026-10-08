@@ -1,110 +1,151 @@
+import io
+import csv
 import pandas as pd
 import numpy as np
-import os
-
-# ==========================================
-# --- OLD FORMAT CONFIGURATION (STANDARD CSV) ---
-# ==========================================
-OLD_SKIP_ROWS = 0
-OLD_INDICES = [0, 5, 8, 13, 14, 15] 
-OLD_RENAME_MAP = {
-    0: "Time", 5: "Altitude", 8: "Airspeed", 
-    13: "RPM", 14: "Throttle_Pos", 15: "Fuel_Level"
-}
-OLD_PERCENTAGE_COLS = ["Throttle_Pos", "Fuel_Level"]
-
-# ==========================================
-# --- NEW FORMAT CONFIGURATION (SF50 TELEMETRY) ---
-# ==========================================
-NEW_SKIP_ROWS = 2
-# Corrected indices based on the raw file structure
-NEW_INDICES = [0, 5, 11, 20, 23, 26, 29, 32, 35, 38, 41, 44, 47, 50, 89, 92, 95, 104, 107, 113, 116] 
-
-NEW_RENAME_MAP = {
-    0: "Time", 
-    5: "Groundspeed", 
-    11: "Cabin Diff PSI", 
-    20: "Bld Px PSI",        
-    23: "Bleed On",          
-    26: "N1 %",              
-    29: "N2 %",              
-    32: "ITT (F)",           
-    35: "Oil Temp (F)",      
-    38: "Oil Px PSI",        
-    41: "TLA DEG",           
-    44: "TT2 (C)",           
-    47: "PT2 PSI",           
-    50: "CHPV",              
-    89: "ECS PRI DUCT T (F)",
-    92: "ECS PRI DUCT T2 (F)",
-    95: "ECS CKPT T (F)",    
-    104: "O2 BTL Px PSI",    
-    107: "O2 VLV Open",      
-    113: "EIPS TMP (F)",     
-    116: "EIPS PRS PSI"      
-}
-NEW_PERCENTAGE_COLS = ["N1 %", "N2 %"]
-
-# ==========================================
-# --- ANOMALY REPLACEMENT ---
-# ==========================================
-ANOMALY_FIXES = [
-    (9.89999976239994E+24, 9.8) 
-]
 
 def clean_data(file_input):
-    """Auto-detects format, cleans anomalies, and returns a DataFrame."""
-    
-    # 1. Auto-Detect Format
-    file_content = file_input.getvalue().decode("utf-8", errors="replace")
-    top_lines = file_content.splitlines()[:5]
-    
-    # Check if it's the newer SF50 telemetry log
-    is_sf50 = any("Cirrus SF50" in line or "Alert Name" in line for line in top_lines)
-    
-    if is_sf50:
-        skip_rows = NEW_SKIP_ROWS
-        indices = NEW_INDICES
-        rename_map = NEW_RENAME_MAP
-        pct_cols = NEW_PERCENTAGE_COLS
+    """
+    Auto-detects and normalizes SF50 flight logs:
+    - Standard tabular G3000/G1000 CSVs
+    - Garmin MFD '1 HZ Data / Trigger' alert logs (triplet format)
+    """
+    # 1. Read lines safely from string, path, or UploadedFile buffer
+    if hasattr(file_input, "getvalue"):
+        raw_text = file_input.getvalue().decode("utf-8", errors="replace")
+    elif hasattr(file_input, "read"):
+        raw_text = file_input.read()
+        if isinstance(raw_text, bytes):
+            raw_text = raw_text.decode("utf-8", errors="replace")
     else:
-        skip_rows = OLD_SKIP_ROWS
-        indices = OLD_INDICES
-        rename_map = OLD_RENAME_MAP
-        pct_cols = OLD_PERCENTAGE_COLS
+        with open(file_input, "r", encoding="utf-8", errors="replace") as f:
+            raw_text = f.read()
 
-    # 2. Load Data
-    file_input.seek(0) # Reset file pointer for Pandas
-    df = pd.read_csv(file_input, header=None, skiprows=skip_rows)
-    
-    # 3. Check Columns
-    max_idx = max(indices)
-    if max_idx >= len(df.columns):
-        raise ValueError(f"File only has {len(df.columns)} columns. Expected at least {max_idx + 1}.")
+    reader = list(csv.reader(io.StringIO(raw_text)))
+    if not reader or len(reader) < 2:
+        return pd.DataFrame()
 
-    # 4. Filter & Rename
-    df = df.iloc[:, indices]
-    new_names = [rename_map[idx] for idx in indices]
-    df.columns = new_names
+    # 2. Check if this is a Garmin MFD Trigger format
+    # Signature: Line 1 has 'Trigger Name' and Line 2 contains parameters like 'N1', 'N2', 'ITT'
+    is_trigger_format = False
+    if len(reader) >= 3 and "Trigger Name" in reader[1]:
+        is_trigger_format = True
 
-    # 5. Anomaly Fixing
-    for col in df.columns:
-        if col == "Time": continue
-        
-        df[col] = pd.to_numeric(df[col], errors='coerce')
-        for bad_val, new_val in ANOMALY_FIXES:
-            mask = np.isclose(df[col], bad_val, atol=1e15) 
-            if mask.any():
-                df.loc[mask, col] = new_val
+    if is_trigger_format:
+        return _parse_trigger_format(reader)
+    else:
+        return _parse_standard_format(io.StringIO(raw_text))
 
-    # 6. Overwrite Time with Counter
-    df['Time'] = range(1, len(df) + 1)
-    cols = ['Time'] + [c for c in df.columns if c != 'Time']
-    df = df[cols]
 
-    # 7. Convert Percentage
-    for col in pct_cols:
-        if col in df.columns:
-            df[col] = df[col] * 100
+def _parse_trigger_format(rows):
+    header_row = rows[1]
+    name_row = rows[2]
 
-    return df, is_sf50
+    # Map each parameter name to its column index for 'Trigger Value'
+    col_map = {}
+    for i in range(len(header_row)):
+        if header_row[i].strip() == "Trigger Name" and i + 1 < len(header_row):
+            param_name = name_row[i].strip()
+            val_col_idx = i + 1
+            col_map[param_name] = val_col_idx
+
+    # Extract raw data rows (from row 2 onward)
+    data_rows = rows[2:]
+
+    # Parse timestamps into elapsed seconds
+    ts_list = [r[0].strip() for r in data_rows]
+    try:
+        ts_series = pd.to_datetime(ts_list)
+        time_sec = (ts_series - ts_series[0]).total_seconds().values
+    except Exception:
+        time_sec = np.arange(len(data_rows))
+
+    df_out = pd.DataFrame({"Time": time_sec})
+
+    def get_series(param_name):
+        if param_name not in col_map:
+            return pd.Series([np.nan] * len(data_rows))
+        idx = col_map[param_name]
+        vals = [r[idx] if idx < len(r) else np.nan for r in data_rows]
+        s = pd.to_numeric(pd.Series(vals), errors="coerce")
+        # Filter astronomical sensor uninitialized errors (e.g. 9.89e+24)
+        s[s > 1e6] = np.nan
+        return s
+
+    # Canonical parameter mappings expected by graph_flight_interactive.py
+    df_out["Groundspeed"] = get_series("GROUNDSPEED > 30KTS")
+    df_out["Cabin Diff PSI"] = get_series("CAB DIF")
+    df_out["Bld Px PSI"] = get_series("BLD PRS")
+    df_out["Bleed On"] = get_series("BLD ON")
+
+    # N1 and N2 in this log are fractions (0.0 to 1.0) -> scale to %
+    raw_n1 = get_series("N1")
+    df_out["N1 %"] = raw_n1 * 100.0 if raw_n1.dropna().max() <= 1.5 else raw_n1
+
+    raw_n2 = get_series("N2")
+    df_out["N2 %"] = raw_n2 * 100.0 if raw_n2.dropna().max() <= 1.5 else raw_n2
+
+    df_out["ITT (F)"] = get_series("ITT")
+    df_out["Oil Temp (F)"] = get_series("OIL TMP")
+    df_out["Oil Px PSI"] = get_series("OIL PRS")
+    df_out["TLA DEG"] = get_series("TLA")
+    df_out["TT2 (C)"] = get_series("TT2")
+    df_out["PT2 PSI"] = get_series("PT2")
+    df_out["CHPV"] = get_series("CHPV")
+    df_out["ECS PRI DUCT T (F)"] = get_series("ECS PRI DUCT T")
+    df_out["ECS PRI DUCT T2 (F)"] = get_series("ECS PRI DUCT T2")
+    df_out["ECS CKPT T (F)"] = get_series("ECS CKPT T")
+    df_out["O2 BTL Px PSI"] = get_series("O2 BTL PRESS")
+    df_out["O2 VLV Open"] = get_series("O2 VLV OPEN")
+    df_out["EIPS TMP (F)"] = get_series("EIPS TMP")
+    df_out["EIPS PRS PSI"] = get_series("EIPS PRS")
+
+    return df_out
+
+
+def _parse_standard_format(stream):
+    df_raw = pd.read_csv(stream)
+    df_raw.columns = [c.strip() for c in df_raw.columns]
+
+    df_out = pd.DataFrame()
+
+    time_col = next((c for c in df_raw.columns if c.lower() in ["time", "time (sec)", "seconds"]), None)
+    if time_col:
+        df_out["Time"] = pd.to_numeric(df_raw[time_col], errors="coerce")
+    else:
+        df_out["Time"] = np.arange(len(df_raw))
+
+    # Standard column mapper
+    mappings = {
+        "Groundspeed": ["Groundspeed", "GndSpd", "GPS Ground Speed"],
+        "Cabin Diff PSI": ["Cabin Diff PSI", "CAB DIF", "CabDiff"],
+        "Bld Px PSI": ["Bld Px PSI", "BLD PRS", "Bleed Pres"],
+        "Bleed On": ["Bleed On", "BLD ON"],
+        "N1 %": ["N1 %", "N1%", "E1 N1 %", "ENG N1 %", "N1"],
+        "N2 %": ["N2 %", "N2%", "E1 N2 %", "ENG N2 %", "N2"],
+        "ITT (F)": ["ITT (F)", "ITT", "E1 ITT", "ENG ITT"],
+        "Oil Temp (F)": ["Oil Temp (F)", "OIL TMP", "E1 Oil Temp"],
+        "Oil Px PSI": ["Oil Px PSI", "OIL PRS", "E1 Oil Pres"],
+        "TLA DEG": ["TLA DEG", "TLA"],
+        "TT2 (C)": ["TT2 (C)", "TT2"],
+        "PT2 PSI": ["PT2 PSI", "PT2"],
+        "CHPV": ["CHPV"],
+        "ECS PRI DUCT T (F)": ["ECS PRI DUCT T (F)", "ECS PRI DUCT T"],
+        "ECS PRI DUCT T2 (F)": ["ECS PRI DUCT T2 (F)", "ECS PRI DUCT T2"],
+        "ECS CKPT T (F)": ["ECS CKPT T (F)", "ECS CKPT T"],
+        "O2 BTL Px PSI": ["O2 BTL Px PSI", "O2 BTL PRESS"],
+        "O2 VLV Open": ["O2 VLV Open", "O2 VLV OPEN"],
+        "EIPS TMP (F)": ["EIPS TMP (F)", "EIPS TMP"],
+        "EIPS PRS PSI": ["EIPS PRS PSI", "EIPS PRS"]
+    }
+
+    for target_col, candidates in mappings.items():
+        matched = next((c for c in candidates if c in df_raw.columns), None)
+        if matched:
+            s = pd.to_numeric(df_raw[matched], errors="coerce")
+            if target_col in ["N1 %", "N2 %"] and s.dropna().max() <= 1.5:
+                s = s * 100.0
+            df_out[target_col] = s
+        else:
+            df_out[target_col] = np.nan
+
+    return df_out
