@@ -5,13 +5,13 @@ import numpy as np
 
 def clean_data(file_input):
     """
-    Auto-detects and normalizes SF50 flight logs:
-    - Standard tabular G3000/G1000 CSVs
-    - Garmin MFD '1 HZ Data / Trigger' alert logs (triplet format)
+    Auto-detects and normalizes SF50 flight logs.
+    Returns: (df_clean, is_sf50)
     """
-    # 1. Read lines safely from string, path, or UploadedFile buffer
+    # 1. Read raw text safely from Streamlit UploadedFile or file path
     if hasattr(file_input, "getvalue"):
-        raw_text = file_input.getvalue().decode("utf-8", errors="replace")
+        raw_bytes = file_input.getvalue()
+        raw_text = raw_bytes.decode("utf-8", errors="replace")
     elif hasattr(file_input, "read"):
         raw_text = file_input.read()
         if isinstance(raw_text, bytes):
@@ -22,25 +22,31 @@ def clean_data(file_input):
 
     reader = list(csv.reader(io.StringIO(raw_text)))
     if not reader or len(reader) < 2:
-        return pd.DataFrame()
+        return pd.DataFrame(), False
 
-    # 2. Check if this is a Garmin MFD Trigger format
-    # Signature: Line 1 has 'Trigger Name' and Line 2 contains parameters like 'N1', 'N2', 'ITT'
-    is_trigger_format = False
+    # Check for SF50 airframe signature in file header or metadata
+    header_chunk = " ".join(" ".join(row) for row in reader[:3]).upper()
+    is_sf50 = ("CIRRUS SF50" in header_chunk) or ("SF50" in header_chunk)
+
+    # 2. Identify file format
+    # Format A: Garmin MFD Alert/Trigger log (repeated "Trigger Name", "Trigger Value")
     if len(reader) >= 3 and "Trigger Name" in reader[1]:
-        is_trigger_format = True
-
-    if is_trigger_format:
-        return _parse_trigger_format(reader)
+        df_clean = _parse_trigger_format(reader)
+        # If trigger format contains Vision Jet systems (e.g. ITT, CAB DIF, EIPS), treat as SF50
+        if not is_sf50 and "N1" in reader[2] and "ITT" in reader[2]:
+            is_sf50 = True
+        return df_clean, is_sf50
     else:
-        return _parse_standard_format(io.StringIO(raw_text))
+        # Format B: Standard columnar CSV
+        df_clean = _parse_standard_format(io.StringIO(raw_text))
+        return df_clean, is_sf50
 
 
 def _parse_trigger_format(rows):
     header_row = rows[1]
     name_row = rows[2]
 
-    # Map each parameter name to its column index for 'Trigger Value'
+    # Map parameter names to their Trigger Value column index
     col_map = {}
     for i in range(len(header_row)):
         if header_row[i].strip() == "Trigger Name" and i + 1 < len(header_row):
@@ -48,7 +54,6 @@ def _parse_trigger_format(rows):
             val_col_idx = i + 1
             col_map[param_name] = val_col_idx
 
-    # Extract raw data rows (from row 2 onward)
     data_rows = rows[2:]
 
     # Parse timestamps into elapsed seconds
@@ -67,17 +72,17 @@ def _parse_trigger_format(rows):
         idx = col_map[param_name]
         vals = [r[idx] if idx < len(r) else np.nan for r in data_rows]
         s = pd.to_numeric(pd.Series(vals), errors="coerce")
-        # Filter astronomical sensor uninitialized errors (e.g. 9.89e+24)
+        # Filter uninitialized float glitches (e.g. 9.89e+24)
         s[s > 1e6] = np.nan
         return s
 
-    # Canonical parameter mappings expected by graph_flight_interactive.py
+    # Canonical parameter mappings
     df_out["Groundspeed"] = get_series("GROUNDSPEED > 30KTS")
     df_out["Cabin Diff PSI"] = get_series("CAB DIF")
     df_out["Bld Px PSI"] = get_series("BLD PRS")
     df_out["Bleed On"] = get_series("BLD ON")
 
-    # N1 and N2 in this log are fractions (0.0 to 1.0) -> scale to %
+    # Scale fractional rotor speeds (0.0 to 1.0) -> %
     raw_n1 = get_series("N1")
     df_out["N1 %"] = raw_n1 * 100.0 if raw_n1.dropna().max() <= 1.5 else raw_n1
 
@@ -114,7 +119,6 @@ def _parse_standard_format(stream):
     else:
         df_out["Time"] = np.arange(len(df_raw))
 
-    # Standard column mapper
     mappings = {
         "Groundspeed": ["Groundspeed", "GndSpd", "GPS Ground Speed"],
         "Cabin Diff PSI": ["Cabin Diff PSI", "CAB DIF", "CabDiff"],
